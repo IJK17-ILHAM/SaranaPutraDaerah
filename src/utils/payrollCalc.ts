@@ -2,6 +2,7 @@ import type {
   DivisionName,
   DivisionSummaryRow,
   PayrollCalculation,
+  PayrollCycle,
   PayrollRecord,
 } from '../types/payroll';
 import { cleanRupiahToNumber } from './format';
@@ -21,6 +22,13 @@ export function getPeriodeDisplay(item: PayrollRecord): string {
 
 export function getStatusDisplay(item: PayrollRecord): string {
   return (item.status || item.statusBayar || 'Draft').toString();
+}
+
+export function getSiklusDisplay(item: PayrollRecord): PayrollCycle {
+  const raw = (item.siklusGaji || '').toString().trim().toLowerCase();
+  if (raw.includes('bulan')) return 'Bulanan';
+  if (raw.includes('minggu')) return 'Mingguan';
+  return 'Mingguan';
 }
 
 export function calculateTHP(item: PayrollRecord): PayrollCalculation {

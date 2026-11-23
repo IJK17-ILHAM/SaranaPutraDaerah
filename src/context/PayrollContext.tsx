@@ -1,26 +1,61 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import { STORAGE_KEYS } from '../config/constants';
+import { DEFAULT_PAYROLL_RATES, STORAGE_KEYS } from '../config/constants';
 import { SAMPLE_PAYROLL_FALLBACK } from '../data/sampleData';
 import {
+  deletePayrollFromSPS,
   deleteUserFromSPS,
   fetchPayrollFromSPS,
   fetchUsersFromSPS,
   savePayrollToSPS,
   saveUserToSPS,
+  updatePayrollInSPS,
 } from '../services/payrollApi';
 import type { AccountFormPayload, AccountRecord } from '../types/auth';
-import type { PayrollFilters, PayrollRecord } from '../types/payroll';
-import { isAdminRole } from '../utils/format';
-import { getPeriodeDisplay, getSkemaDisplay, getStatusDisplay } from '../utils/payrollCalc';
+import type {
+  DivisionName,
+  EmployeeKasbonEntry,
+  EmployeeProfile,
+  PayrollCycle,
+  PayrollFilters,
+  PayrollRecord,
+} from '../types/payroll';
+import { cleanRupiahToNumber, formatRupiah, isAdminRole, todayISO } from '../utils/format';
+import {
+  calculateTHP,
+  getPeriodeDisplay,
+  getSiklusDisplay,
+  getSkemaDisplay,
+  getStatusDisplay,
+} from '../utils/payrollCalc';
 import { useApp } from './AppContext';
 
 export type SyncBadgeState = 'loading' | 'ok' | 'offline';
+
+export interface EmployeeProfileInput {
+  id?: string;
+  nik: string;
+  nama: string;
+  divisi: DivisionName | string;
+  siklusGaji: PayrollCycle;
+  satuanPokok?: 'trip' | 'hari';
+  upahDefault?: number;
+  kasbonSaldo: number;
+  catatan?: string;
+}
+
+export interface KasbonAdjustmentInput {
+  jenis: 'Pinjaman' | 'Cicilan';
+  nominal: number;
+  tanggal: string;
+  keterangan?: string;
+}
 
 interface PayrollContextValue {
   records: PayrollRecord[];
   filteredRecords: PayrollRecord[];
   kpiRecords: PayrollRecord[];
   masterEmployees: PayrollRecord[];
+  employeeProfiles: EmployeeProfile[];
   periodOptions: string[];
   divisiOptions: string[];
   filters: PayrollFilters;
@@ -30,6 +65,15 @@ interface PayrollContextValue {
   isSyncing: boolean;
   refreshPayroll: (notify?: boolean) => Promise<void>;
   submitPayroll: (payload: PayrollRecord) => Promise<boolean>;
+  updatePayrollRecord: (target: PayrollRecord, updated: PayrollRecord) => Promise<boolean>;
+  deletePayrollRecord: (target: PayrollRecord) => Promise<void>;
+  editingPayrollRecord: PayrollRecord | null;
+  setEditingPayrollRecord: (rec: PayrollRecord | null) => void;
+  saveEmployeeProfile: (input: EmployeeProfileInput) => EmployeeProfile;
+  deleteEmployeeProfile: (id: string) => void;
+  adjustEmployeeKasbon: (employeeId: string, entry: KasbonAdjustmentInput) => void;
+  getEmployeeProfile: (nik: string, nama?: string) => EmployeeProfile | undefined;
+  getEmployeeKasbonSaldo: (nik: string, nama?: string) => number;
   localDrafts: PayrollRecord[];
   saveLocalDraft: (payload: PayrollRecord) => PayrollRecord;
   saveLocalDraftsBatch: (payloads: PayrollRecord[]) => number;
@@ -44,6 +88,50 @@ interface PayrollContextValue {
 
 const PayrollContext = createContext<PayrollContextValue | null>(null);
 
+function normalizeNikKey(nik?: string): string {
+  const clean = (nik || '').toString().trim().toUpperCase();
+  return clean ? `NIK:${clean}` : '';
+}
+
+function normalizeNameKey(nama?: string): string {
+  const clean = (nama || '').toString().trim().toLowerCase();
+  return clean ? `NAMA:${clean}` : '';
+}
+
+function getEmployeePrimaryKey(nik?: string, nama?: string): string {
+  return normalizeNikKey(nik) || normalizeNameKey(nama);
+}
+
+function stampRecordIds(list: PayrollRecord[]): PayrollRecord[] {
+  return list.map((rec, idx) => {
+    if (rec.recordId) return rec;
+    const nik = (rec.nik || '').toString().trim().toUpperCase();
+    const periode = getPeriodeDisplay(rec);
+    return {
+      ...rec,
+      recordId: `REC-${idx}-${nik || 'NONIK'}-${periode}-${String(rec.thp ?? '')}`,
+    };
+  });
+}
+
+function isSamePayrollRecord(a: PayrollRecord, b: PayrollRecord): boolean {
+  if (a.recordId && b.recordId) {
+    return a.recordId === b.recordId;
+  }
+  return (
+    (a.nik || '').toString().trim().toUpperCase() ===
+      (b.nik || '').toString().trim().toUpperCase() &&
+    (a.nama || '').toString().trim().toLowerCase() ===
+      (b.nama || '').toString().trim().toLowerCase() &&
+    getPeriodeDisplay(a) === getPeriodeDisplay(b) &&
+    String(a.thp ?? '') === String(b.thp ?? '')
+  );
+}
+
+function makeEntryId(prefix: string): string {
+  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
+}
+
 export function PayrollProvider({ children }: { children: React.ReactNode }) {
   const { user, showToast } = useApp();
 
@@ -52,13 +140,41 @@ export function PayrollProvider({ children }: { children: React.ReactNode }) {
     if (cached) {
       try {
         const parsed = JSON.parse(cached);
-        if (Array.isArray(parsed)) return parsed;
+        if (Array.isArray(parsed)) return stampRecordIds(parsed);
       } catch {
         // ignore invalid cache
       }
     }
     return [];
   });
+
+  const [employeeProfiles, setEmployeeProfiles] = useState<EmployeeProfile[]>(() => {
+    const raw = localStorage.getItem(STORAGE_KEYS.PAYROLL_EMPLOYEES);
+    if (raw) {
+      try {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) return parsed;
+      } catch {
+        // ignore invalid storage
+      }
+    }
+    return [];
+  });
+
+  const [deletedEmployeeKeys, setDeletedEmployeeKeys] = useState<string[]>(() => {
+    const raw = localStorage.getItem(STORAGE_KEYS.PAYROLL_DELETED_EMPLOYEES);
+    if (raw) {
+      try {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) return parsed;
+      } catch {
+        // ignore invalid storage
+      }
+    }
+    return [];
+  });
+
+  const [editingPayrollRecord, setEditingPayrollRecord] = useState<PayrollRecord | null>(null);
 
   const [localDrafts, setLocalDrafts] = useState<PayrollRecord[]>(() => {
     const raw = localStorage.getItem(STORAGE_KEYS.PAYROLL_LOCAL_DRAFTS);
@@ -77,6 +193,7 @@ export function PayrollProvider({ children }: { children: React.ReactNode }) {
     search: '',
     skema: 'ALL',
     divisi: 'ALL',
+    siklus: 'ALL',
     periode: 'ALL',
     status: 'ALL',
   });
@@ -88,11 +205,296 @@ export function PayrollProvider({ children }: { children: React.ReactNode }) {
   const [accounts, setAccounts] = useState<AccountRecord[]>([]);
   const [accountsLoading, setAccountsLoading] = useState(false);
 
+  const persistEmployeeProfiles = useCallback(
+    (updater: (prev: EmployeeProfile[]) => EmployeeProfile[]) => {
+      setEmployeeProfiles((prev) => {
+        const next = updater(prev);
+        localStorage.setItem(STORAGE_KEYS.PAYROLL_EMPLOYEES, JSON.stringify(next));
+        return next;
+      });
+    },
+    [],
+  );
+
+  const persistDeletedKeys = useCallback((updater: (prev: string[]) => string[]) => {
+    setDeletedEmployeeKeys((prev) => {
+      const next = updater(prev);
+      localStorage.setItem(STORAGE_KEYS.PAYROLL_DELETED_EMPLOYEES, JSON.stringify(next));
+      return next;
+    });
+  }, []);
+
+  // Auto-hydrate employee profiles from SPS payroll records so existing employees appear automatically
+  useEffect(() => {
+    if (!records.length) return;
+    setEmployeeProfiles((prev) => {
+      const deletedSet = new Set(deletedEmployeeKeys);
+      const existingNikKeys = new Set(prev.map((p) => normalizeNikKey(p.nik)).filter(Boolean));
+      const existingNameKeys = new Set(prev.map((p) => normalizeNameKey(p.nama)).filter(Boolean));
+
+      const additions: EmployeeProfile[] = [];
+      records.forEach((rec) => {
+        const cleanNama = (rec.nama || '').toString().trim();
+        const cleanNik = (rec.nik || '').toString().trim().toUpperCase();
+        if (!cleanNama) return;
+
+        const nikKey = normalizeNikKey(cleanNik);
+        const nameKey = normalizeNameKey(cleanNama);
+        if ((nikKey && deletedSet.has(nikKey)) || (nameKey && deletedSet.has(nameKey))) {
+          return;
+        }
+        if ((nikKey && existingNikKeys.has(nikKey)) || (!nikKey && existingNameKeys.has(nameKey))) {
+          return;
+        }
+
+        const c = calculateTHP(rec);
+        const profile: EmployeeProfile = {
+          id: makeEntryId('EMP'),
+          nik: cleanNik || '-',
+          nama: cleanNama,
+          divisi: c.skema,
+          siklusGaji: getSiklusDisplay(rec),
+          satuanPokok: c.isTrip ? 'trip' : 'hari',
+          upahDefault:
+            c.tarifPokok ||
+            (c.isTrip ? DEFAULT_PAYROLL_RATES.upahPerTrip : DEFAULT_PAYROLL_RATES.upahPerHari),
+          kasbonSaldo: 0,
+          kasbonHistory: [],
+          catatan: '',
+          updatedAt: new Date().toISOString(),
+        };
+        additions.push(profile);
+        if (nikKey) existingNikKeys.add(nikKey);
+        if (nameKey) existingNameKeys.add(nameKey);
+      });
+
+      if (!additions.length) return prev;
+      const next = [...prev, ...additions];
+      localStorage.setItem(STORAGE_KEYS.PAYROLL_EMPLOYEES, JSON.stringify(next));
+      return next;
+    });
+  }, [records, deletedEmployeeKeys]);
+
   const setFilter = useCallback(
     <K extends keyof PayrollFilters>(key: K, value: PayrollFilters[K]) => {
       setFilters((prev) => ({ ...prev, [key]: value }));
     },
     [],
+  );
+
+  const getEmployeeProfile = useCallback(
+    (nik: string, nama?: string): EmployeeProfile | undefined => {
+      const nikKey = normalizeNikKey(nik);
+      const nameKey = normalizeNameKey(nama);
+      if (nikKey) {
+        const byNik = employeeProfiles.find((p) => normalizeNikKey(p.nik) === nikKey);
+        if (byNik) return byNik;
+      }
+      if (nameKey) {
+        return employeeProfiles.find((p) => normalizeNameKey(p.nama) === nameKey);
+      }
+      return undefined;
+    },
+    [employeeProfiles],
+  );
+
+  const getEmployeeKasbonSaldo = useCallback(
+    (nik: string, nama?: string): number => {
+      return getEmployeeProfile(nik, nama)?.kasbonSaldo ?? 0;
+    },
+    [getEmployeeProfile],
+  );
+
+  const saveEmployeeProfile = useCallback(
+    (input: EmployeeProfileInput): EmployeeProfile => {
+      const cleanNik = input.nik.trim().toUpperCase();
+      const cleanNama = input.nama.trim();
+      const cleanSaldo = Math.max(0, Math.round(Number(input.kasbonSaldo) || 0));
+      const nowIso = new Date().toISOString();
+      const today = todayISO();
+
+      // Remove from deleted keys in case this employee is re-added
+      const keysToRestore = [normalizeNikKey(cleanNik), normalizeNameKey(cleanNama)].filter(Boolean);
+      if (keysToRestore.length) {
+        persistDeletedKeys((prev) => prev.filter((k) => !keysToRestore.includes(k)));
+      }
+
+      let savedResult: EmployeeProfile | null = null;
+
+      persistEmployeeProfiles((prev) => {
+        const existingIdx = input.id
+          ? prev.findIndex((p) => p.id === input.id)
+          : prev.findIndex(
+              (p) =>
+                (cleanNik && normalizeNikKey(p.nik) === normalizeNikKey(cleanNik)) ||
+                normalizeNameKey(p.nama) === normalizeNameKey(cleanNama),
+            );
+
+        if (existingIdx >= 0) {
+          const old = prev[existingIdx];
+          const history = [...(old.kasbonHistory || [])];
+          if (cleanSaldo !== old.kasbonSaldo) {
+            history.unshift({
+              id: makeEntryId('KBN'),
+              tanggal: today,
+              jenis: 'Penyesuaian',
+              nominal: Math.abs(cleanSaldo - old.kasbonSaldo),
+              keterangan: `Penyesuaian saldo dari ${formatRupiah(old.kasbonSaldo)} menjadi ${formatRupiah(cleanSaldo)}`,
+            });
+          }
+          const updated: EmployeeProfile = {
+            ...old,
+            nik: cleanNik || old.nik,
+            nama: cleanNama,
+            divisi: input.divisi,
+            siklusGaji: input.siklusGaji,
+            satuanPokok: input.satuanPokok,
+            upahDefault: input.upahDefault,
+            kasbonSaldo: cleanSaldo,
+            kasbonHistory: history,
+            catatan: (input.catatan || '').trim(),
+            updatedAt: nowIso,
+          };
+          savedResult = updated;
+          return prev.map((p, idx) => (idx === existingIdx ? updated : p));
+        }
+
+        const initialHistory: EmployeeKasbonEntry[] =
+          cleanSaldo > 0
+            ? [
+                {
+                  id: makeEntryId('KBN'),
+                  tanggal: today,
+                  jenis: 'Pinjaman',
+                  nominal: cleanSaldo,
+                  keterangan: 'Saldo awal hutang / kasbon karyawan',
+                },
+              ]
+            : [];
+
+        const created: EmployeeProfile = {
+          id: input.id || makeEntryId('EMP'),
+          nik: cleanNik || '-',
+          nama: cleanNama,
+          divisi: input.divisi,
+          siklusGaji: input.siklusGaji,
+          satuanPokok: input.satuanPokok,
+          upahDefault: input.upahDefault,
+          kasbonSaldo: cleanSaldo,
+          kasbonHistory: initialHistory,
+          catatan: (input.catatan || '').trim(),
+          updatedAt: nowIso,
+        };
+        savedResult = created;
+        return [created, ...prev];
+      });
+
+      return (
+        savedResult || {
+          id: input.id || makeEntryId('EMP'),
+          nik: cleanNik || '-',
+          nama: cleanNama,
+          divisi: input.divisi,
+          siklusGaji: input.siklusGaji,
+          satuanPokok: input.satuanPokok,
+          upahDefault: input.upahDefault,
+          kasbonSaldo: cleanSaldo,
+          kasbonHistory: [],
+          catatan: (input.catatan || '').trim(),
+          updatedAt: nowIso,
+        }
+      );
+    },
+    [persistDeletedKeys, persistEmployeeProfiles],
+  );
+
+  const deleteEmployeeProfile = useCallback(
+    (id: string) => {
+      const target = employeeProfiles.find((p) => p.id === id);
+      if (target) {
+        const keys = [normalizeNikKey(target.nik), normalizeNameKey(target.nama)].filter(Boolean);
+        if (keys.length) {
+          persistDeletedKeys((prev) => Array.from(new Set([...prev, ...keys])));
+        }
+      }
+      persistEmployeeProfiles((prev) => prev.filter((p) => p.id !== id));
+    },
+    [employeeProfiles, persistDeletedKeys, persistEmployeeProfiles],
+  );
+
+  const adjustEmployeeKasbon = useCallback(
+    (employeeId: string, entry: KasbonAdjustmentInput) => {
+      const nominal = Math.max(0, Math.round(Number(entry.nominal) || 0));
+      if (nominal <= 0) return;
+
+      persistEmployeeProfiles((prev) =>
+        prev.map((emp) => {
+          if (emp.id !== employeeId) return emp;
+          const nextSaldo =
+            entry.jenis === 'Pinjaman'
+              ? emp.kasbonSaldo + nominal
+              : Math.max(0, emp.kasbonSaldo - nominal);
+
+          const newLog: EmployeeKasbonEntry = {
+            id: makeEntryId('KBN'),
+            tanggal: entry.tanggal || todayISO(),
+            jenis: entry.jenis,
+            nominal,
+            keterangan:
+              (entry.keterangan || '').trim() ||
+              (entry.jenis === 'Pinjaman' ? 'Pinjaman / kasbon baru' : 'Pembayaran cicilan kasbon'),
+          };
+
+          return {
+            ...emp,
+            kasbonSaldo: nextSaldo,
+            kasbonHistory: [newLog, ...(emp.kasbonHistory || [])],
+            updatedAt: new Date().toISOString(),
+          };
+        }),
+      );
+    },
+    [persistEmployeeProfiles],
+  );
+
+  const deductKasbonFromPayroll = useCallback(
+    (payload: PayrollRecord, deltaAmount: number, isEditAdjustment = false) => {
+      if (deltaAmount === 0) return;
+      const nikKey = normalizeNikKey(payload.nik);
+      const nameKey = normalizeNameKey(payload.nama);
+      const periodeRef = getPeriodeDisplay(payload);
+
+      persistEmployeeProfiles((prev) => {
+        const idx = prev.findIndex(
+          (p) =>
+            (nikKey && normalizeNikKey(p.nik) === nikKey) ||
+            (nameKey && normalizeNameKey(p.nama) === nameKey),
+        );
+        if (idx < 0) return prev;
+
+        const target = prev[idx];
+        const nextSaldo = Math.max(0, target.kasbonSaldo - deltaAmount);
+        const logEntry: EmployeeKasbonEntry = {
+          id: makeEntryId('KBN'),
+          tanggal: todayISO(),
+          jenis: isEditAdjustment ? 'Penyesuaian' : 'Potong Gaji',
+          nominal: Math.abs(deltaAmount),
+          periodeRef,
+          keterangan: isEditAdjustment
+            ? `Penyesuaian potongan gaji periode ${periodeRef}`
+            : `Potongan kasbon dari gaji (${getSiklusDisplay(payload)}) periode ${periodeRef}`,
+        };
+
+        const updated: EmployeeProfile = {
+          ...target,
+          kasbonSaldo: nextSaldo,
+          kasbonHistory: [logEntry, ...(target.kasbonHistory || [])],
+          updatedAt: new Date().toISOString(),
+        };
+        return prev.map((p, i) => (i === idx ? updated : p));
+      });
+    },
+    [persistEmployeeProfiles],
   );
 
   const refreshPayroll = useCallback(
@@ -101,7 +503,7 @@ export function PayrollProvider({ children }: { children: React.ReactNode }) {
       setSyncState('loading');
       setSyncLabel('SYNCING...');
       try {
-        const rows = await fetchPayrollFromSPS();
+        const rows = stampRecordIds(await fetchPayrollFromSPS());
         setRecords(rows);
         localStorage.setItem(STORAGE_KEYS.PAYROLL_CACHE, JSON.stringify(rows));
         setSyncState('ok');
@@ -122,7 +524,7 @@ export function PayrollProvider({ children }: { children: React.ReactNode }) {
         if (fallbackRows.length === 0 && user?.isDemo) {
           fallbackRows = SAMPLE_PAYROLL_FALLBACK;
         }
-        setRecords(fallbackRows);
+        setRecords(stampRecordIds(fallbackRows));
         setSyncState('offline');
         setSyncLabel('CACHE');
         if (notify) {
@@ -139,26 +541,40 @@ export function PayrollProvider({ children }: { children: React.ReactNode }) {
     async (payload: PayrollRecord): Promise<boolean> => {
       setSyncState('loading');
       setSyncLabel('SAVING...');
+      const stampedPayload: PayrollRecord = {
+        ...payload,
+        recordId: payload.recordId || makeEntryId('REC'),
+        siklusGaji: getSiklusDisplay(payload),
+        savedAt: new Date().toISOString(),
+      };
+      const kasbonPot = cleanRupiahToNumber(stampedPayload.kasbon);
+
       try {
-        const res = await savePayrollToSPS(payload);
+        const res = await savePayrollToSPS(stampedPayload);
         if (res && res.status === 'error') {
           throw new Error(res.message || 'Gagal menyimpan ke Google SPS');
         }
         setRecords((prev) => {
-          const next = [payload, ...prev];
+          const next = [stampedPayload, ...prev];
           localStorage.setItem(STORAGE_KEYS.PAYROLL_CACHE, JSON.stringify(next));
           return next;
         });
+        if (kasbonPot > 0) {
+          deductKasbonFromPayroll(stampedPayload, kasbonPot, false);
+        }
         setSyncState('ok');
         setSyncLabel('LIVE');
         return true;
       } catch (err) {
         if (user?.isDemo) {
           setRecords((prev) => {
-            const next = [payload, ...prev];
+            const next = [stampedPayload, ...prev];
             localStorage.setItem(STORAGE_KEYS.PAYROLL_CACHE, JSON.stringify(next));
             return next;
           });
+          if (kasbonPot > 0) {
+            deductKasbonFromPayroll(stampedPayload, kasbonPot, false);
+          }
           setSyncState('offline');
           setSyncLabel('CACHE');
           showToast('Tersimpan di cache lokal (Mode Demo).', 'info');
@@ -171,36 +587,79 @@ export function PayrollProvider({ children }: { children: React.ReactNode }) {
         return false;
       }
     },
-    [showToast, user?.isDemo],
+    [deductKasbonFromPayroll, showToast, user?.isDemo],
   );
 
-  const persistLocalDrafts = useCallback((next: PayrollRecord[]) => {
-    setLocalDrafts(next);
-    localStorage.setItem(STORAGE_KEYS.PAYROLL_LOCAL_DRAFTS, JSON.stringify(next));
-  }, []);
-
-  const saveLocalDraft = useCallback(
-    (payload: PayrollRecord): PayrollRecord => {
-      const id =
-        payload.localDraftId ||
-        `DRAFT-${Date.now()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
-      const record: PayrollRecord = {
-        ...payload,
-        localDraftId: id,
-        status: payload.status || 'Draft',
-        statusBayar: payload.statusBayar || payload.status || 'Draft',
+  const updatePayrollRecord = useCallback(
+    async (target: PayrollRecord, updated: PayrollRecord): Promise<boolean> => {
+      const merged: PayrollRecord = {
+        ...updated,
+        recordId: target.recordId || updated.recordId || makeEntryId('REC'),
+        siklusGaji: getSiklusDisplay(updated),
         savedAt: new Date().toISOString(),
       };
-      setLocalDrafts((prev) => {
-        const idx = prev.findIndex((d) => d.localDraftId === id);
-        const next = idx >= 0 ? prev.map((d, i) => (i === idx ? record : d)) : [record, ...prev];
-        localStorage.setItem(STORAGE_KEYS.PAYROLL_LOCAL_DRAFTS, JSON.stringify(next));
+
+      const oldKasbon = cleanRupiahToNumber(target.kasbon);
+      const newKasbon = cleanRupiahToNumber(merged.kasbon);
+      const kasbonDelta = newKasbon - oldKasbon;
+
+      setRecords((prev) => {
+        const idx = prev.findIndex((r) => isSamePayrollRecord(r, target));
+        const next =
+          idx >= 0 ? prev.map((r, i) => (i === idx ? merged : r)) : [merged, ...prev];
+        localStorage.setItem(STORAGE_KEYS.PAYROLL_CACHE, JSON.stringify(next));
         return next;
       });
-      return record;
+
+      if (kasbonDelta !== 0) {
+        deductKasbonFromPayroll(merged, kasbonDelta, true);
+      }
+
+      try {
+        await updatePayrollInSPS(merged);
+      } catch {
+        // Legacy Google Apps Script may not implement updatePayroll yet; local cache already updated
+      }
+
+      return true;
     },
-    [],
+    [deductKasbonFromPayroll],
   );
+
+  const deletePayrollRecord = useCallback(async (target: PayrollRecord): Promise<void> => {
+    setRecords((prev) => {
+      const next = prev.filter((r) => !isSamePayrollRecord(r, target));
+      localStorage.setItem(STORAGE_KEYS.PAYROLL_CACHE, JSON.stringify(next));
+      return next;
+    });
+
+    try {
+      await deletePayrollFromSPS(target.nik || '', target.nama || '', getPeriodeDisplay(target));
+    } catch {
+      // Legacy Google Apps Script may not implement deletePayroll yet; local cache already updated
+    }
+  }, []);
+
+  const saveLocalDraft = useCallback((payload: PayrollRecord): PayrollRecord => {
+    const id =
+      payload.localDraftId ||
+      `DRAFT-${Date.now()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
+    const record: PayrollRecord = {
+      ...payload,
+      localDraftId: id,
+      siklusGaji: getSiklusDisplay(payload),
+      status: payload.status || 'Draft',
+      statusBayar: payload.statusBayar || payload.status || 'Draft',
+      savedAt: new Date().toISOString(),
+    };
+    setLocalDrafts((prev) => {
+      const idx = prev.findIndex((d) => d.localDraftId === id);
+      const next = idx >= 0 ? prev.map((d, i) => (i === idx ? record : d)) : [record, ...prev];
+      localStorage.setItem(STORAGE_KEYS.PAYROLL_LOCAL_DRAFTS, JSON.stringify(next));
+      return next;
+    });
+    return record;
+  }, []);
 
   const saveLocalDraftsBatch = useCallback((payloads: PayrollRecord[]): number => {
     if (!payloads.length) return 0;
@@ -210,13 +669,13 @@ export function PayrollProvider({ children }: { children: React.ReactNode }) {
       localDraftId:
         p.localDraftId ||
         `DRAFT-${Date.now()}-${idx}-${Math.random().toString(36).slice(2, 5).toUpperCase()}`,
+      siklusGaji: getSiklusDisplay(p),
       status: p.status || 'Draft',
       statusBayar: p.statusBayar || p.status || 'Draft',
       savedAt: now,
     }));
 
     setLocalDrafts((prev) => {
-      // Replace existing local draft for same NIK + periode if present
       const mapKey = (r: PayrollRecord) =>
         `${(r.nik || '').trim().toUpperCase()}__${(r.periodeTanggal || r.periodeBulan || '').trim().toLowerCase()}`;
       const incomingKeys = new Set(stamped.map(mapKey));
@@ -329,33 +788,66 @@ export function PayrollProvider({ children }: { children: React.ReactNode }) {
 
   const masterEmployees = useMemo(() => {
     const map = new Map<string, PayrollRecord>();
+    // Seed with historical payroll records first
     records.forEach((item) => {
       if (item.nama) {
-        map.set((item.nik || item.nama).toString().toUpperCase(), item);
+        const key = getEmployeePrimaryKey(item.nik, item.nama);
+        if (key && !map.has(key)) {
+          map.set(key, item);
+        }
       }
     });
+    // Overlay managed employeeProfiles so new/edited profiles always reflect latest divisi, siklus, and rates
+    employeeProfiles.forEach((prof) => {
+      const key = getEmployeePrimaryKey(prof.nik, prof.nama);
+      if (!key) return;
+      const existing = map.get(key);
+      const isTrip =
+        prof.divisi === 'Supir B3' ||
+        (prof.divisi === 'Supir SPD' && (prof.satuanPokok || 'trip') === 'trip');
+      map.set(key, {
+        ...(existing || {}),
+        nama: prof.nama,
+        nik: prof.nik,
+        divisi: prof.divisi,
+        skema: prof.divisi,
+        siklusGaji: prof.siklusGaji,
+        satuanPokok: isTrip ? 'trip' : 'hari',
+        upahPerHari: !isTrip
+          ? prof.upahDefault || existing?.upahPerHari || DEFAULT_PAYROLL_RATES.upahPerHari
+          : existing?.upahPerHari || 0,
+        upahPerTrip: isTrip
+          ? prof.upahDefault || existing?.upahPerTrip || DEFAULT_PAYROLL_RATES.upahPerTrip
+          : existing?.upahPerTrip || 0,
+      });
+    });
     return Array.from(map.values());
-  }, [records]);
+  }, [records, employeeProfiles]);
 
   const kpiRecords = useMemo(() => {
     const sk = filters.skema.toLowerCase();
+    const cyc = filters.siklus.toLowerCase();
     return records.filter(
       (d) =>
         (sk === 'all' || getSkemaDisplay(d).toLowerCase() === sk) &&
+        (cyc === 'all' || getSiklusDisplay(d).toLowerCase() === cyc) &&
         (filters.periode === 'ALL' || getPeriodeDisplay(d) === filters.periode),
     );
-  }, [records, filters.skema, filters.periode]);
+  }, [records, filters.skema, filters.siklus, filters.periode]);
 
   const filteredRecords = useMemo(() => {
     const sk = filters.skema.toLowerCase();
+    const cyc = filters.siklus.toLowerCase();
     const sv = filters.search.trim().toLowerCase();
     return records.filter((d) => {
       const iSkema = getSkemaDisplay(d).toLowerCase();
+      const iSiklus = getSiklusDisplay(d).toLowerCase();
       const iPeriode = getPeriodeDisplay(d);
       const iStatus = getStatusDisplay(d);
       const iDivisi = (d.divisi || '').toString();
       return (
         (sk === 'all' || iSkema === sk) &&
+        (cyc === 'all' || iSiklus === cyc) &&
         (filters.divisi === 'ALL' || iDivisi === filters.divisi) &&
         (filters.periode === 'ALL' || iPeriode === filters.periode) &&
         (filters.status === 'ALL' || iStatus.toLowerCase() === filters.status.toLowerCase()) &&
@@ -363,7 +855,8 @@ export function PayrollProvider({ children }: { children: React.ReactNode }) {
           (d.nama || '').toLowerCase().includes(sv) ||
           (d.nik || '').toLowerCase().includes(sv) ||
           iDivisi.toLowerCase().includes(sv) ||
-          iSkema.includes(sv))
+          iSkema.includes(sv) ||
+          iSiklus.includes(sv))
       );
     });
   }, [records, filters]);
@@ -375,6 +868,7 @@ export function PayrollProvider({ children }: { children: React.ReactNode }) {
         filteredRecords,
         kpiRecords,
         masterEmployees,
+        employeeProfiles,
         periodOptions,
         divisiOptions,
         filters,
@@ -384,6 +878,15 @@ export function PayrollProvider({ children }: { children: React.ReactNode }) {
         isSyncing,
         refreshPayroll,
         submitPayroll,
+        updatePayrollRecord,
+        deletePayrollRecord,
+        editingPayrollRecord,
+        setEditingPayrollRecord,
+        saveEmployeeProfile,
+        deleteEmployeeProfile,
+        adjustEmployeeKasbon,
+        getEmployeeProfile,
+        getEmployeeKasbonSaldo,
         localDrafts,
         saveLocalDraft,
         saveLocalDraftsBatch,

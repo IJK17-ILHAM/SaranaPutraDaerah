@@ -9,6 +9,8 @@ export const STORAGE_KEYS = {
   USER: 'spd_logged_user',
   PAYROLL_CACHE: 'spd_payroll_cache',
   PAYROLL_LOCAL_DRAFTS: 'spd_payroll_local_drafts',
+  PAYROLL_EMPLOYEES: 'spd_payroll_employees',
+  PAYROLL_DELETED_EMPLOYEES: 'spd_payroll_deleted_employees',
   KT_BARANG: 'spd_kt_barang',
   KT_CUSTOMERS: 'spd_kt_customers',
   KT_TRANSACTIONS: 'spd_kt_transactions',
@@ -22,6 +24,8 @@ export const STORAGE_KEYS = {
 export const DIVISIONS = ['Karyawan limbah', 'Supir B3', 'Supir SPD'] as const;
 
 export const PAYROLL_STATUSES = ['Draft', 'Approved', 'Paid'] as const;
+
+export const PAYROLL_CYCLES = ['Mingguan', 'Bulanan'] as const;
 
 export const ACCOUNT_ROLES = [
   'Super Admin',

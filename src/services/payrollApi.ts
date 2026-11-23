@@ -77,3 +77,23 @@ export async function deleteUserFromSPS(email: string): Promise<GenericSpsRespon
     GOOGLE_SPS_URL,
   );
 }
+
+export async function updatePayrollInSPS(payload: PayrollRecord): Promise<GenericSpsResponse> {
+  return jsonpRequest<GenericSpsResponse>(
+    { ...payload, action: 'updatePayroll' } as unknown as Record<string, unknown>,
+    15000,
+    GOOGLE_SPS_URL,
+  );
+}
+
+export async function deletePayrollFromSPS(
+  nik: string,
+  nama: string,
+  periodeTanggal: string,
+): Promise<GenericSpsResponse> {
+  return jsonpRequest<GenericSpsResponse>(
+    { action: 'deletePayroll', nik, nama, periodeTanggal },
+    15000,
+    GOOGLE_SPS_URL,
+  );
+}

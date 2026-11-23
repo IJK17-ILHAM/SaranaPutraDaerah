@@ -2,6 +2,8 @@ export type DivisionName = 'Karyawan limbah' | 'Supir B3' | 'Supir SPD';
 
 export type PayrollStatus = 'Draft' | 'Approved' | 'Paid';
 
+export type PayrollCycle = 'Mingguan' | 'Bulanan';
+
 export type SupirSpdUnit = 'trip' | 'hari';
 
 export interface ActiveLemburState {
@@ -11,12 +13,14 @@ export interface ActiveLemburState {
 }
 
 export interface PayrollRecord {
+  recordId?: string;
   action?: string;
   nama: string;
   nik: string;
   divisi: string;
   skema?: string;
   tipe?: string;
+  siklusGaji?: PayrollCycle | string;
   satuanPokok?: 'trip' | 'hari' | string;
   periodeTanggal?: string;
   periodeBulan?: string;
@@ -91,8 +95,32 @@ export interface PayrollFilters {
   search: string;
   skema: string;
   divisi: string;
+  siklus: string;
   periode: string;
   status: string;
+}
+
+export interface EmployeeKasbonEntry {
+  id: string;
+  tanggal: string;
+  jenis: 'Pinjaman' | 'Cicilan' | 'Potong Gaji' | 'Penyesuaian';
+  nominal: number;
+  keterangan?: string;
+  periodeRef?: string;
+}
+
+export interface EmployeeProfile {
+  id: string;
+  nik: string;
+  nama: string;
+  divisi: DivisionName | string;
+  siklusGaji: PayrollCycle;
+  satuanPokok?: 'trip' | 'hari';
+  upahDefault?: number;
+  kasbonSaldo: number;
+  kasbonHistory: EmployeeKasbonEntry[];
+  catatan?: string;
+  updatedAt?: string;
 }
 
 export interface DivisionSummaryRow {

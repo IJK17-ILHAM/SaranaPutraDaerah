@@ -64,8 +64,8 @@ export function LoginPage() {
               PT. Sarana Putra Daerah
             </h1>
             <p className="text-sm mt-3 text-white/75 leading-relaxed">
-              Portal terpadu payroll mingguan, rekap kas operasional, stok gudang &amp; tonase
-              timbangan.
+              Portal terpadu payroll mingguan &amp; bulanan, rekap kas operasional, stok gudang
+              &amp; tonase timbangan.
             </p>
           </div>
 

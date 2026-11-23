@@ -12,17 +12,25 @@ import {
   RefreshCw,
   RotateCcw,
   Trash2,
+  Wallet,
+  X,
 } from 'lucide-react';
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { PageHeader } from '../../components/common/PageHeader';
 import { PayrollStatusText } from '../../components/common/StatusBadge';
 import { AttendanceImportModal } from '../../components/payroll/AttendanceImportModal';
-import { DEFAULT_PAYROLL_RATES, DIVISIONS, PAYROLL_STATUSES } from '../../config/constants';
+import {
+  DEFAULT_PAYROLL_RATES,
+  DIVISIONS,
+  PAYROLL_CYCLES,
+  PAYROLL_STATUSES,
+} from '../../config/constants';
 import { useApp } from '../../context/AppContext';
 import { usePayroll } from '../../context/PayrollContext';
 import type {
   ActiveLemburState,
   DivisionName,
+  PayrollCycle,
   PayrollRecord,
   PayrollStatus,
   SupirSpdUnit,
@@ -36,7 +44,12 @@ import {
   formatNumberWithDots,
   formatRupiah,
 } from '../../utils/format';
-import { calculateTHP, getPeriodeDisplay, getStatusDisplay } from '../../utils/payrollCalc';
+import {
+  calculateTHP,
+  getPeriodeDisplay,
+  getSiklusDisplay,
+  getStatusDisplay,
+} from '../../utils/payrollCalc';
 
 export function InputGajiPage() {
   const { user, showToast, requestConfirm } = useApp();
@@ -46,6 +59,11 @@ export function InputGajiPage() {
     isSyncing,
     refreshPayroll,
     submitPayroll,
+    updatePayrollRecord,
+    editingPayrollRecord,
+    setEditingPayrollRecord,
+    getEmployeeProfile,
+    getEmployeeKasbonSaldo,
     saveLocalDraft,
     deleteLocalDraft,
     promoteDraftToSPS,
@@ -67,6 +85,7 @@ export function InputGajiPage() {
   const [nama, setNama] = useState('');
   const [nik, setNik] = useState('');
   const [divisi, setDivisi] = useState<DivisionName>('Karyawan limbah');
+  const [siklusGaji, setSiklusGaji] = useState<PayrollCycle>('Mingguan');
   const [supirSpdUnit, setSupirSpdUnit] = useState<SupirSpdUnit>('trip');
 
   const [hr, setHr] = useState(String(DEFAULT_PAYROLL_RATES.hariKerja));
@@ -176,12 +195,23 @@ export function InputGajiPage() {
     });
   };
 
-  const loadRecordIntoForm = (rec: PayrollRecord, draftId: string | null = null) => {
+  const matchedProfile = useMemo(
+    () => getEmployeeProfile(nik, nama),
+    [getEmployeeProfile, nik, nama],
+  );
+
+  const loadRecordIntoForm = (
+    rec: PayrollRecord,
+    draftId: string | null = null,
+    isEditingSavedRecord = false,
+  ) => {
     const c = calculateTHP(rec);
+    const prof = getEmployeeProfile(rec.nik || '', rec.nama || '');
     setEditingDraftId(draftId);
     setNama(rec.nama || '');
     setNik(rec.nik || '');
     setDivisi(c.skema);
+    setSiklusGaji(prof?.siklusGaji || getSiklusDisplay(rec));
     if (rec.periodeTanggal || rec.periodeBulan) {
       setPeriodeTanggal(getPeriodeDisplay(rec));
     }
@@ -219,17 +249,28 @@ export function InputGajiPage() {
     setKasbon(formatNumberWithDots(c.kasbon));
     setBpjs(formatNumberWithDots(c.bpjs));
     setKeterangan(rec.keterangan || '');
+    const activeSaldo = getEmployeeKasbonSaldo(rec.nik || '', rec.nama || '');
+    setSaldoKasbon(formatNumberWithDots(isEditingSavedRecord ? activeSaldo + c.kasbon : activeSaldo));
     const st = getStatusDisplay(rec);
     if (st === 'Draft' || st === 'Approved' || st === 'Paid') {
       setStatus(st);
     }
   };
 
+  useEffect(() => {
+    if (editingPayrollRecord) {
+      loadRecordIntoForm(editingPayrollRecord, null, true);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editingPayrollRecord]);
+
   const applyMasterEmployee = (idxStr: string) => {
     setSelectedEmpIdx(idxStr);
     const idx = parseInt(idxStr, 10);
     if (isNaN(idx) || !masterEmployees[idx]) return;
-    loadRecordIntoForm(masterEmployees[idx], null);
+    setEditingPayrollRecord(null);
+    loadRecordIntoForm(masterEmployees[idx], null, false);
   };
 
   const applyImportedAttendanceRow = (
@@ -283,6 +324,7 @@ export function InputGajiPage() {
   const resetForm = (keepContext = true) => {
     setSelectedEmpIdx('');
     setEditingDraftId(null);
+    setEditingPayrollRecord(null);
     setNama('');
     setNik('');
     setHr(String(DEFAULT_PAYROLL_RATES.hariKerja));
@@ -356,12 +398,14 @@ export function InputGajiPage() {
 
     return {
       action: 'save',
+      recordId: editingPayrollRecord?.recordId,
       localDraftId: editingDraftId || undefined,
       nama: cleanNama,
       nik: cleanNik,
       divisi,
       skema: divisi,
       tipe: divisi.toLowerCase(),
+      siklusGaji,
       satuanPokok: isTripMode ? 'trip' : 'hari',
       periodeTanggal: periodeTanggal.trim(),
       periodeBulan: periodeTanggal.trim(),
@@ -421,6 +465,16 @@ export function InputGajiPage() {
 
     setSubmitting(true);
     try {
+      if (editingPayrollRecord) {
+        const ok = await updatePayrollRecord(editingPayrollRecord, payload);
+        if (ok) {
+          setEditingPayrollRecord(null);
+          resetForm(true);
+          showToast(`Perubahan data gaji ${payload.nama} berhasil disimpan.`, 'success');
+        }
+        return;
+      }
+
       const ok = await submitPayroll(payload);
       if (ok) {
         if (editingDraftId) {
@@ -538,9 +592,9 @@ export function InputGajiPage() {
     <section className="space-y-5">
       <PageHeader
         suiteLabel="Payroll"
-        pageLabel="Input gaji mingguan"
-        title="Input Gaji Mingguan"
-        subtitle="Pilih divisi untuk menyesuaikan komponen gaji & lembur secara otomatis."
+        pageLabel="Input gaji"
+        title={editingPayrollRecord ? 'Edit Data Gaji Karyawan' : 'Input Gaji Karyawan'}
+        subtitle="Dukung sistem gaji Mingguan & Bulanan. Pilih karyawan untuk sinkronisasi divisi, siklus gaji, dan saldo kasbon otomatis."
         actions={
           <>
             <div className="flex items-center gap-2 px-3 py-2 rounded-xl t-card text-xs">
@@ -618,6 +672,28 @@ export function InputGajiPage() {
         </div>
       )}
 
+      {editingPayrollRecord && (
+        <div className="p-3.5 rounded-2xl t-status-warn flex flex-wrap items-center justify-between gap-3 text-xs">
+          <div className="flex items-center gap-2 min-w-0">
+            <Pencil className="w-4 h-4 shrink-0" />
+            <span className="font-semibold">
+              Mode Edit Data Gaji: <strong>{editingPayrollRecord.nama}</strong> (NIK{' '}
+              <span className="font-mono-num">{editingPayrollRecord.nik}</span> &middot;{' '}
+              {getPeriodeDisplay(editingPayrollRecord)}). Klik <b>Simpan Perubahan</b> untuk
+              memperbarui data.
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={() => resetForm(true)}
+            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl t-card text-xs font-bold t-text whitespace-nowrap"
+          >
+            <X className="w-3.5 h-3.5" />
+            <span>Batal Edit</span>
+          </button>
+        </div>
+      )}
+
       {localDrafts.length > 0 && (
         <div className="p-3.5 rounded-2xl t-status-info flex flex-wrap items-center justify-between gap-3 text-xs">
           <div className="flex items-center gap-2 min-w-0">
@@ -675,19 +751,27 @@ export function InputGajiPage() {
               <option value="">-- Pilih Karyawan Terdaftar (Auto-Fill) atau Isi Manual --</option>
               {masterEmployees.map((emp, idx) => (
                 <option key={`${emp.nik}-${idx}`} value={idx}>
-                  {emp.nama} - {emp.nik || '-'} - {calculateTHP(emp).skema}
+                  {emp.nama} - {emp.nik || '-'} - {calculateTHP(emp).skema} ({getSiklusDisplay(emp)})
                 </option>
               ))}
             </select>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
               <div>
                 <label className="block t-field-label mb-1">Nama Karyawan</label>
                 <input
                   type="text"
                   list="employee-suggestions"
                   value={nama}
-                  onChange={(e) => setNama(e.target.value)}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setNama(val);
+                    const prof = getEmployeeProfile(nik, val);
+                    if (prof && !editingPayrollRecord) {
+                      setSaldoKasbon(formatNumberWithDots(prof.kasbonSaldo));
+                      setSiklusGaji(prof.siklusGaji);
+                    }
+                  }}
                   placeholder="Siti..."
                   required
                   className="w-full text-xs px-3 py-2.5 rounded-xl t-input font-semibold"
@@ -703,7 +787,15 @@ export function InputGajiPage() {
                 <input
                   type="text"
                   value={nik}
-                  onChange={(e) => setNik(e.target.value)}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setNik(val);
+                    const prof = getEmployeeProfile(val, nama);
+                    if (prof && !editingPayrollRecord) {
+                      setSaldoKasbon(formatNumberWithDots(prof.kasbonSaldo));
+                      setSiklusGaji(prof.siklusGaji);
+                    }
+                  }}
                   placeholder="003"
                   required
                   className="w-full text-xs px-3 py-2.5 rounded-xl t-input uppercase font-mono-num font-bold"
@@ -720,6 +812,21 @@ export function InputGajiPage() {
                   {DIVISIONS.map((d) => (
                     <option key={d} value={d}>
                       {d}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block t-field-label mb-1">Siklus Gaji</label>
+                <select
+                  value={siklusGaji}
+                  onChange={(e) => setSiklusGaji(e.target.value as PayrollCycle)}
+                  required
+                  className="w-full text-xs px-3 py-2.5 rounded-xl t-input font-bold"
+                >
+                  {PAYROLL_CYCLES.map((c) => (
+                    <option key={c} value={c}>
+                      {c}
                     </option>
                   ))}
                 </select>
@@ -1038,9 +1145,17 @@ export function InputGajiPage() {
             </div>
 
             <div className="px-3.5 py-2.5 rounded-xl t-status-warn flex flex-wrap items-center justify-between gap-2 text-xs">
-              <div className="font-semibold">
-                Sisa kasbon setelah potongan ini:{' '}
-                <b className="font-mono-num">{formatRupiah(preview.sisaKasbon)}</b>
+              <div className="font-semibold flex items-center gap-1.5">
+                <Wallet className="w-3.5 h-3.5 shrink-0" />
+                <span>
+                  Sisa kasbon setelah potongan ini:{' '}
+                  <b className="font-mono-num">{formatRupiah(preview.sisaKasbon)}</b>
+                  {matchedProfile && (
+                    <span className="ml-1.5 text-[10px] opacity-80">
+                      (tersinkron dari Data Karyawan)
+                    </span>
+                  )}
+                </span>
               </div>
               <div className="flex items-center gap-1.5 text-[11px]">
                 <span className="opacity-85">Saldo kasbon awal:</span>
@@ -1088,6 +1203,16 @@ export function InputGajiPage() {
           </div>
 
           <div className="space-y-2 text-xs">
+            <div className="flex justify-between">
+              <span className="t-muted">Siklus gaji</span>
+              <span
+                className={`px-2 py-0.5 rounded-md text-[10px] font-bold ${
+                  siklusGaji === 'Bulanan' ? 't-status-ok' : 't-status-info'
+                }`}
+              >
+                {siklusGaji}
+              </span>
+            </div>
             <div className="flex justify-between">
               <span className="t-muted">
                 {isTripMode ? 'Gaji pokok (Trip)' : 'Gaji pokok (Harian)'}
@@ -1159,31 +1284,54 @@ export function InputGajiPage() {
           </div>
 
           <div className="space-y-2 pt-2">
-            <button
-              type="button"
-              onClick={handleSaveLocalDraft}
-              className="w-full py-2.5 rounded-xl t-btn-primary text-xs inline-flex items-center justify-center gap-1.5"
-            >
-              <HardDrive className="w-3.5 h-3.5" />
-              <span>{editingDraftId ? 'Update Draft Lokal' : 'Simpan Draft Lokal'}</span>
-            </button>
-            <button
-              type="submit"
-              disabled={submitting}
-              className="w-full py-2.5 rounded-xl t-btn-secondary font-semibold text-xs inline-flex items-center justify-center gap-1.5"
-            >
-              <CloudUpload className="w-3.5 h-3.5" />
-              <span>{submitting ? 'Mengirim ke SPS...' : 'Simpan ke SPS'}</span>
-            </button>
-            <button
-              type="button"
-              disabled={submitting}
-              onClick={() => handleSave(true)}
-              className="w-full py-2.5 rounded-xl t-btn-secondary font-semibold text-xs inline-flex items-center justify-center gap-1.5"
-            >
-              <span>Simpan ke SPS &amp; Berikutnya</span>
-              <ArrowRight className="w-3.5 h-3.5" />
-            </button>
+            {editingPayrollRecord ? (
+              <>
+                <button
+                  type="submit"
+                  disabled={submitting}
+                  className="w-full py-2.5 rounded-xl t-btn-primary text-xs inline-flex items-center justify-center gap-1.5"
+                >
+                  <Check className="w-3.5 h-3.5" />
+                  <span>{submitting ? 'Menyimpan...' : 'Simpan Perubahan Gaji'}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => resetForm(true)}
+                  className="w-full py-2.5 rounded-xl t-btn-secondary font-semibold text-xs inline-flex items-center justify-center gap-1.5"
+                >
+                  <X className="w-3.5 h-3.5" />
+                  <span>Batal Edit</span>
+                </button>
+              </>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  onClick={handleSaveLocalDraft}
+                  className="w-full py-2.5 rounded-xl t-btn-primary text-xs inline-flex items-center justify-center gap-1.5"
+                >
+                  <HardDrive className="w-3.5 h-3.5" />
+                  <span>{editingDraftId ? 'Update Draft Lokal' : 'Simpan Draft Lokal'}</span>
+                </button>
+                <button
+                  type="submit"
+                  disabled={submitting}
+                  className="w-full py-2.5 rounded-xl t-btn-secondary font-semibold text-xs inline-flex items-center justify-center gap-1.5"
+                >
+                  <CloudUpload className="w-3.5 h-3.5" />
+                  <span>{submitting ? 'Mengirim ke SPS...' : 'Simpan ke SPS'}</span>
+                </button>
+                <button
+                  type="button"
+                  disabled={submitting}
+                  onClick={() => handleSave(true)}
+                  className="w-full py-2.5 rounded-xl t-btn-secondary font-semibold text-xs inline-flex items-center justify-center gap-1.5"
+                >
+                  <span>Simpan ke SPS &amp; Berikutnya</span>
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </button>
+              </>
+            )}
           </div>
         </div>
       </form>
@@ -1275,7 +1423,16 @@ export function InputGajiPage() {
                         <div className="text-[10px] t-muted font-mono-num">NIK {d.nik}</div>
                       </td>
                       <td className="py-3 px-3">
-                        <div className="font-semibold t-text">{c.skema}</div>
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-semibold t-text">{c.skema}</span>
+                          <span
+                            className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                              getSiklusDisplay(d) === 'Bulanan' ? 't-status-ok' : 't-status-info'
+                            }`}
+                          >
+                            {getSiklusDisplay(d)}
+                          </span>
+                        </div>
                         <div className="text-[10px] t-muted">{getPeriodeDisplay(d)}</div>
                       </td>
                       <td className="py-3 px-3 text-right font-mono-num font-semibold t-text">

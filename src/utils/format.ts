@@ -5,6 +5,8 @@ export function getTodayISO(): string {
   ).padStart(2, '0')}`;
 }
 
+export const todayISO = getTodayISO;
+
 export function getDaysAgoISO(days: number): string {
   const d = new Date();
   d.setDate(d.getDate() - days);
