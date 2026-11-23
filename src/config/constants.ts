@@ -1,0 +1,73 @@
+export const GOOGLE_SPS_URL =
+  'https://script.google.com/macros/s/AKfycbw0XfcfCiJk4ip3VWAEsOiO8BFt2ywWvQ5MZd3i8_QhchRCl-Eyrjtu_P6wULwTRsbS/exec';
+
+export const GOOGLE_TONASE_URL =
+  'https://script.google.com/macros/s/AKfycbwUCWfARnTuzGZKMJ78fTEvIO-gJ0SoIoEXDU5ovzygbMqCHPIKFZPLLk723gXmXkvWVw/exec';
+
+export const STORAGE_KEYS = {
+  THEME: 'spd_theme_softui',
+  USER: 'spd_logged_user',
+  PAYROLL_CACHE: 'spd_payroll_cache',
+  PAYROLL_LOCAL_DRAFTS: 'spd_payroll_local_drafts',
+  KT_BARANG: 'spd_kt_barang',
+  KT_CUSTOMERS: 'spd_kt_customers',
+  KT_TRANSACTIONS: 'spd_kt_transactions',
+  KT_KASOPS: 'spd_kt_kasops',
+  KT_PIUTANG_MITRA: 'spd_kt_piutang_mitra',
+  KT_PAYMENTS: 'spd_kt_payments',
+  KT_STOCK_MUTATIONS: 'spd_kt_stock_mutations',
+  KT_INITIALIZED: 'spd_kt_initialized',
+} as const;
+
+export const DIVISIONS = ['Karyawan limbah', 'Supir B3', 'Supir SPD'] as const;
+
+export const PAYROLL_STATUSES = ['Draft', 'Approved', 'Paid'] as const;
+
+export const ACCOUNT_ROLES = [
+  'Super Admin',
+  'HR & Payroll',
+  'Manajer Operasional',
+  'Supervisor',
+  'Staff',
+] as const;
+
+export const DEFAULT_PAYROLL_RATES = {
+  hariKerja: 6,
+  upahPerHari: 125000,
+  upahPerTrip: 150000,
+  upahLemburHari: 100000,
+  upahPerJam: 11250,
+  upahPerInap: 100000,
+} as const;
+
+export type ThemeId = 'spd' | 'eco' | 'dark';
+
+export interface ThemeOption {
+  id: ThemeId;
+  name: string;
+  badge?: string;
+  description: string;
+  swatches: string[];
+}
+
+export const THEME_OPTIONS: ThemeOption[] = [
+  {
+    id: 'spd',
+    name: 'Pilihan A: Soft UI (Cobalt & Ivory)',
+    badge: 'Default',
+    description: 'Cobalt (#2563EB), Sky (#60A5FA), Mist (#E0E7FF), Ivory (#F4F2ED) & Charcoal (#1F2937).',
+    swatches: ['#2563EB', '#60A5FA', '#E0E7FF', '#F4F2ED', '#1F2937'],
+  },
+  {
+    id: 'eco',
+    name: 'Pilihan B: Hijau Daur Ulang',
+    description: 'Hijau tua (#1F5C4A) & Hijau segar (#248458).',
+    swatches: ['#1F5C4A', '#248458', '#F1F5F2', '#6EE7B7', '#1E2A24'],
+  },
+  {
+    id: 'dark',
+    name: 'Pilihan C: Dark Mode',
+    description: 'Tampilan Charcoal gelap dengan aksen Cobalt & Sky untuk operasional malam.',
+    swatches: ['#1F2937', '#2563EB', '#60A5FA', '#111827', '#F9FAFB'],
+  },
+];

@@ -1,0 +1,6 @@
+{
+  "name": "SPD. Portal — Payroll, Kas & Tonase",
+  "description": "Portal terpadu payroll mingguan, rekap kas operasional, stok gudang, dan tonase timbangan untuk PT. Sarana Putra Daerah.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

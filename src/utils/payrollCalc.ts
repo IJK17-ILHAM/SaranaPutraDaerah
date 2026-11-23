@@ -1,0 +1,145 @@
+import type {
+  DivisionName,
+  DivisionSummaryRow,
+  PayrollCalculation,
+  PayrollRecord,
+} from '../types/payroll';
+import { cleanRupiahToNumber } from './format';
+
+export function getSkemaDisplay(item: PayrollRecord): DivisionName {
+  const raw = (item.skema || item.tipe || item.divisi || '').toString().toLowerCase();
+  if (raw.includes('spd')) return 'Supir SPD';
+  if (raw.includes('supir') || raw.includes('b3')) return 'Supir B3';
+  return 'Karyawan limbah';
+}
+
+export function getPeriodeDisplay(item: PayrollRecord): string {
+  return (item.periodeTanggal || item.periodeBulan || item.periodeWaktu || '-')
+    .toString()
+    .trim();
+}
+
+export function getStatusDisplay(item: PayrollRecord): string {
+  return (item.status || item.statusBayar || 'Draft').toString();
+}
+
+export function calculateTHP(item: PayrollRecord): PayrollCalculation {
+  const skema = getSkemaDisplay(item);
+  const tripVal = cleanRupiahToNumber(item.trip);
+  const upahTripVal = cleanRupiahToNumber(item.upahPerTrip);
+  const hrVal = cleanRupiahToNumber(item.hariKerja || item.hadir || item.spsHadir);
+  const upahHariVal = cleanRupiahToNumber(item.upahPerHari);
+
+  const isTrip =
+    skema === 'Supir B3' ||
+    (skema === 'Supir SPD' && (tripVal > 0 || item.satuanPokok === 'trip'));
+
+  const unitPokok = isTrip ? tripVal : hrVal;
+  const tarifPokok = isTrip ? upahTripVal : upahHariVal;
+  const gapok =
+    unitPokok > 0 && tarifPokok > 0
+      ? unitPokok * tarifPokok
+      : cleanRupiahToNumber(item.gapok);
+
+  const lemburHari = cleanRupiahToNumber(item.lemburHari);
+  const upahLemburHari = cleanRupiahToNumber(item.upahLemburHari);
+  let nomHari = cleanRupiahToNumber(item.nominalLemburHari) || lemburHari * upahLemburHari;
+
+  const jamUtama = cleanRupiahToNumber(item.jamLembur);
+  const tambahanJam = cleanRupiahToNumber(item.tambahanJamLembur);
+  const totalJam = jamUtama + tambahanJam;
+  const upahPerJam = cleanRupiahToNumber(item.upahPerJam);
+  let nomJam = cleanRupiahToNumber(item.nominalLemburJam) || totalJam * upahPerJam;
+
+  const inap = cleanRupiahToNumber(item.inap);
+  const upahPerInap = cleanRupiahToNumber(item.upahPerInap);
+  let nomInap = cleanRupiahToNumber(item.nominalLemburInap) || inap * upahPerInap;
+
+  let lemburNominal = nomHari + nomJam + nomInap;
+  if (lemburNominal === 0) {
+    const lNom = cleanRupiahToNumber(item.lemburNominal);
+    const lVol = cleanRupiahToNumber(item.lemburVolume);
+    const lTar = cleanRupiahToNumber(item.lemburTarif);
+    const lJns = (item.lemburJenis || '').toString().toLowerCase();
+    lemburNominal = lNom || lVol * lTar;
+    if (lemburNominal > 0 || lVol > 0) {
+      if (lJns.includes('inap')) nomInap = lemburNominal;
+      else if (lJns.includes('hari')) nomHari = lemburNominal;
+      else nomJam = lemburNominal;
+    }
+  }
+
+  const parts: string[] = [];
+  if (lemburHari > 0 || nomHari > 0) {
+    parts.push(`${lemburHari || cleanRupiahToNumber(item.lemburVolume)} Hari`);
+  }
+  if (totalJam > 0 || nomJam > 0) {
+    parts.push(`${totalJam || cleanRupiahToNumber(item.lemburVolume)} Jam`);
+  }
+  if (inap > 0 || nomInap > 0) {
+    parts.push(`${inap || cleanRupiahToNumber(item.lemburVolume)} Inap`);
+  }
+
+  const breakdownText =
+    item.lemburBreakdown ||
+    (parts.length > 0
+      ? parts.join(' + ')
+      : lemburNominal > 0
+        ? item.lemburJenis || 'Lembur'
+        : '0');
+
+  const gajiKotor = cleanRupiahToNumber(item.gajiKotor) || gapok + lemburNominal;
+  const kasbon = cleanRupiahToNumber(item.kasbon);
+  const bpjs = cleanRupiahToNumber(item.bpjs);
+  let totalPot = cleanRupiahToNumber(item.totalPotongan);
+  if (totalPot === 0) totalPot = kasbon + bpjs;
+
+  let thp = cleanRupiahToNumber(item.thp);
+  if (thp === 0 && (gajiKotor > 0 || totalPot > 0)) {
+    thp = gajiKotor - totalPot;
+  }
+
+  return {
+    skema,
+    isTrip,
+    unitPokok,
+    tarifPokok,
+    gapok,
+    lemburHari,
+    upahLemburHari,
+    nomHari,
+    jamUtama,
+    tambahanJam,
+    totalJam,
+    upahPerJam,
+    nomJam,
+    inap,
+    upahPerInap,
+    nomInap,
+    lemburNominal,
+    breakdownText,
+    gajiKotor,
+    kasbon,
+    bpjs,
+    totalPot,
+    thp,
+    keterangan: item.keterangan || '-',
+  };
+}
+
+export function buildDivisionSummary(items: PayrollRecord[]): DivisionSummaryRow[] {
+  const map: Record<string, DivisionSummaryRow> = {};
+  items.forEach((item) => {
+    const divisi = getSkemaDisplay(item);
+    const calc = calculateTHP(item);
+    if (!map[divisi]) {
+      map[divisi] = { divisi, count: 0, gapok: 0, lembur: 0, pot: 0, thp: 0 };
+    }
+    map[divisi].count += 1;
+    map[divisi].gapok += calc.gapok;
+    map[divisi].lembur += calc.lemburNominal;
+    map[divisi].pot += calc.totalPot;
+    map[divisi].thp += calc.thp;
+  });
+  return Object.values(map).sort((a, b) => b.thp - a.thp);
+}
