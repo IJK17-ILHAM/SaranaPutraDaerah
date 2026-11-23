@@ -16,12 +16,31 @@ import {
   formatRupiah,
   normalizeInvoiceCode,
 } from '../../utils/format';
-import { calculateTHP, getPeriodeDisplay, getStatusDisplay } from '../../utils/payrollCalc';
+import {
+  calculateTHP,
+  getActiveOvertimeDetails,
+  getOvertimeDetailSummary,
+  getPeriodeDisplay,
+  getSiklusDisplay,
+  getStatusDisplay,
+  resolveSlipKasbonInfo,
+} from '../../utils/payrollCalc';
 import { SpdLogoWordmark } from '../common/SpdLogo';
 
-export function SingleEnvelopeSlip({ item }: { item: PayrollRecord }) {
+export function SingleEnvelopeSlip({
+  item,
+  liveSaldoKasbon = 0,
+}: {
+  item: PayrollRecord;
+  liveSaldoKasbon?: number;
+}) {
   const c = calculateTHP(item);
   const periode = getPeriodeDisplay(item);
+  const siklus = getSiklusDisplay(item);
+  const activeOvertime = getActiveOvertimeDetails(c);
+  const overtimeSummary = getOvertimeDetailSummary(c);
+  const kasbonInfo = resolveSlipKasbonInfo(item, c, liveSaldoKasbon);
+
   const pokokLabel = c.isTrip
     ? `Gaji Pokok (${c.unitPokok} Trip × ${formatRupiah(c.tarifPokok)})`
     : `Gaji Pokok (${c.unitPokok} HR × ${formatRupiah(c.tarifPokok)})`;
@@ -39,7 +58,7 @@ export function SingleEnvelopeSlip({ item }: { item: PayrollRecord }) {
                 PT. SARANA PUTRA DAERAH
               </div>
               <div style={{ fontSize: '8.5px', color: '#4a5568' }}>
-                SLIP GAJI RESMI KARYAWAN &bull; PERIODE: <b>{periode}</b>
+                SLIP GAJI RESMI KARYAWAN ({siklus.toUpperCase()}) &bull; PERIODE: <b>{periode}</b>
               </div>
             </td>
             <td style={{ border: 'none', width: '35%', textAlign: 'right', padding: 0 }}>
@@ -99,15 +118,25 @@ export function SingleEnvelopeSlip({ item }: { item: PayrollRecord }) {
             <td>Iuran BPJS</td>
             <td style={{ textAlign: 'right' }}>{formatRupiah(c.bpjs)}</td>
           </tr>
-          <tr>
-            <td>
-              Rincian: Harian {formatRupiah(c.nomHari)} | Jam {formatRupiah(c.nomJam)} | Inap{' '}
-              {formatRupiah(c.nomInap)}
-            </td>
-            <td style={{ textAlign: 'right' }}>-</td>
-            <td>-</td>
-            <td style={{ textAlign: 'right' }}>-</td>
-          </tr>
+          {(activeOvertime.length > 0 || kasbonInfo.hasKasbonNotice) && (
+            <tr>
+              <td>{activeOvertime.length > 0 ? overtimeSummary : '-'}</td>
+              <td style={{ textAlign: 'right' }}>-</td>
+              <td>{kasbonInfo.hasKasbonNotice ? 'Sisa Hutang / Kasbon' : '-'}</td>
+              <td
+                style={{
+                  textAlign: 'right',
+                  fontWeight: kasbonInfo.hasKasbonNotice ? 'bold' : 'normal',
+                }}
+              >
+                {kasbonInfo.hasKasbonNotice
+                  ? kasbonInfo.sisaKasbon > 0
+                    ? formatRupiah(kasbonInfo.sisaKasbon)
+                    : 'Lunas (Rp 0)'
+                  : '-'}
+              </td>
+            </tr>
+          )}
           <tr style={{ background: '#f7fafc', fontWeight: 'bold' }}>
             <td>GAJI KOTOR</td>
             <td style={{ textAlign: 'right' }}>{formatRupiah(c.gajiKotor)}</td>
@@ -147,6 +176,38 @@ export function SingleEnvelopeSlip({ item }: { item: PayrollRecord }) {
         </tbody>
       </table>
 
+      {kasbonInfo.hasKasbonNotice && (
+        <table style={{ marginBottom: '6px' }}>
+          <tbody>
+            <tr style={{ background: '#fffbeb' }}>
+              <td
+                style={{
+                  fontSize: '8.5px',
+                  lineHeight: 1.45,
+                  color: '#78350f',
+                  borderColor: '#d97706',
+                }}
+              >
+                <b style={{ color: '#92400e' }}>PEMBERITAHUAN HUTANG / KASBON KARYAWAN:</b>{' '}
+                {kasbonInfo.saldoAwal > 0 && (
+                  <>
+                    Saldo Awal <b>{formatRupiah(kasbonInfo.saldoAwal)}</b> &bull;{' '}
+                  </>
+                )}
+                Potongan Gaji Periode Ini{' '}
+                <b style={{ color: '#b91c1c' }}>{formatRupiah(kasbonInfo.potonganKasbon)}</b>{' '}
+                &bull; Sisa Kasbon / Hutang:{' '}
+                <b style={{ color: kasbonInfo.sisaKasbon > 0 ? '#92400e' : '#15803d' }}>
+                  {kasbonInfo.sisaKasbon > 0
+                    ? formatRupiah(kasbonInfo.sisaKasbon)
+                    : 'LUNAS (Rp 0)'}
+                </b>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      )}
+
       <table style={{ border: 'none' }}>
         <tbody>
           <tr style={{ border: 'none' }}>
@@ -169,9 +230,18 @@ export function SingleEnvelopeSlip({ item }: { item: PayrollRecord }) {
   );
 }
 
-export function CompactSlip({ item }: { item: PayrollRecord }) {
+export function CompactSlip({
+  item,
+  liveSaldoKasbon = 0,
+}: {
+  item: PayrollRecord;
+  liveSaldoKasbon?: number;
+}) {
   const c = calculateTHP(item);
   const periode = getPeriodeDisplay(item);
+  const siklus = getSiklusDisplay(item);
+  const activeOvertime = getActiveOvertimeDetails(c);
+  const kasbonInfo = resolveSlipKasbonInfo(item, c, liveSaldoKasbon);
   const unit = c.isTrip ? `${c.unitPokok} Trip` : `${c.unitPokok} HR`;
 
   return (
@@ -183,7 +253,7 @@ export function CompactSlip({ item }: { item: PayrollRecord }) {
               <td style={{ border: 'none', padding: 0 }}>
                 <div style={{ fontWeight: 900, fontSize: '10px' }}>PT. SARANA PUTRA DAERAH</div>
                 <div style={{ fontSize: '7.5px' }}>
-                  SLIP GAJI &bull; PERIODE: <b>{periode}</b>
+                  SLIP GAJI ({siklus.toUpperCase()}) &bull; PERIODE: <b>{periode}</b>
                 </div>
               </td>
               <td style={{ border: 'none', padding: 0, textAlign: 'right', verticalAlign: 'top' }}>
@@ -244,10 +314,17 @@ export function CompactSlip({ item }: { item: PayrollRecord }) {
               <td style={{ textAlign: 'right' }}>{formatRupiah(c.bpjs)}</td>
             </tr>
             <tr>
-              <td>Keterangan</td>
-              <td style={{ textAlign: 'right' }}>{c.keterangan}</td>
-              <td>-</td>
-              <td style={{ textAlign: 'right' }}>-</td>
+              <td colSpan={2} style={{ fontSize: '7px' }}>
+                {activeOvertime.length > 0 ? activeOvertime.join(' | ') : `Ket: ${c.keterangan}`}
+              </td>
+              <td>{kasbonInfo.hasKasbonNotice ? 'Sisa Kasbon' : '-'}</td>
+              <td style={{ textAlign: 'right', fontWeight: kasbonInfo.hasKasbonNotice ? 'bold' : 'normal' }}>
+                {kasbonInfo.hasKasbonNotice
+                  ? kasbonInfo.sisaKasbon > 0
+                    ? formatRupiah(kasbonInfo.sisaKasbon)
+                    : 'Lunas'
+                  : '-'}
+              </td>
             </tr>
             <tr style={{ fontWeight: 'bold', background: '#f7fafc' }}>
               <td>Gaji Kotor</td>
@@ -260,7 +337,7 @@ export function CompactSlip({ item }: { item: PayrollRecord }) {
       </div>
 
       <div>
-        <table style={{ marginBottom: '4px' }}>
+        <table style={{ marginBottom: '3px' }}>
           <tbody>
             <tr style={{ background: '#edf2f7', fontWeight: 900 }}>
               <td style={{ width: '55%' }}>GAJI BERSIH (THP)</td>
@@ -270,6 +347,24 @@ export function CompactSlip({ item }: { item: PayrollRecord }) {
             </tr>
           </tbody>
         </table>
+
+        {kasbonInfo.hasKasbonNotice && (
+          <div
+            style={{
+              border: '1px solid #d97706',
+              background: '#fffbeb',
+              color: '#78350f',
+              fontSize: '6.8px',
+              padding: '2px 4px',
+              marginBottom: '3px',
+            }}
+          >
+            <b>Info Kasbon:</b> Potong Gaji <b>{formatRupiah(kasbonInfo.potonganKasbon)}</b> | Sisa{' '}
+            <b>
+              {kasbonInfo.sisaKasbon > 0 ? formatRupiah(kasbonInfo.sisaKasbon) : 'LUNAS (Rp 0)'}
+            </b>
+          </div>
+        )}
 
         <table style={{ border: 'none' }}>
           <tbody>

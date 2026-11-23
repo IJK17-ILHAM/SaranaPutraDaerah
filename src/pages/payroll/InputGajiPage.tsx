@@ -438,6 +438,8 @@ export function InputGajiPage() {
       pph: 0,
       gajiKotor: preview.kotor,
       kasbon: preview.kasbonVal,
+      saldoKasbonAwal: cleanRupiahToNumber(saldoKasbon),
+      sisaKasbonSetelah: preview.sisaKasbon,
       bpjs: preview.bpjsVal,
       keterangan: keterangan.trim(),
       totalPotongan: preview.potongan,

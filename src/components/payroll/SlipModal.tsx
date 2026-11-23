@@ -1,12 +1,16 @@
 import { Download, Printer, X } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
+import { usePayroll } from '../../context/PayrollContext';
 import { downloadSingleSlipPDF } from '../../utils/exportPdf';
 import { SingleEnvelopeSlip } from '../print/SlipTemplates';
 
 export function SlipModal() {
   const { slipModalItem, closeSlipModal, triggerPrint } = useApp();
+  const { getEmployeeKasbonSaldo } = usePayroll();
 
   if (!slipModalItem) return null;
+
+  const liveSaldoKasbon = getEmployeeKasbonSaldo(slipModalItem.nik, slipModalItem.nama);
 
   return (
     <div
@@ -36,7 +40,7 @@ export function SlipModal() {
         </div>
 
         <div className="flex justify-center overflow-x-auto p-3 t-subtle rounded-xl border t-border-strong">
-          <SingleEnvelopeSlip item={slipModalItem} />
+          <SingleEnvelopeSlip item={slipModalItem} liveSaldoKasbon={liveSaldoKasbon} />
         </div>
 
         <div className="mt-4 flex flex-wrap justify-end gap-2 border-t t-border pt-3">
@@ -57,7 +61,7 @@ export function SlipModal() {
           </button>
           <button
             type="button"
-            onClick={() => downloadSingleSlipPDF(slipModalItem)}
+            onClick={() => downloadSingleSlipPDF(slipModalItem, liveSaldoKasbon)}
             className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold rounded-xl t-btn-primary whitespace-nowrap"
           >
             <Download className="w-3.5 h-3.5" />

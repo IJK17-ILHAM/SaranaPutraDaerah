@@ -7,12 +7,24 @@ import {
   formatRupiah,
   normalizeInvoiceCode,
 } from './format';
-import { calculateTHP, getPeriodeDisplay, getStatusDisplay } from './payrollCalc';
+import {
+  calculateTHP,
+  getActiveOvertimeDetails,
+  getOvertimeDetailSummary,
+  getPeriodeDisplay,
+  getSiklusDisplay,
+  getStatusDisplay,
+  resolveSlipKasbonInfo,
+} from './payrollCalc';
 
-export function downloadSingleSlipPDF(item: PayrollRecord): void {
+export function downloadSingleSlipPDF(item: PayrollRecord, liveSaldoKasbon = 0): void {
   const c = calculateTHP(item);
   const periode = getPeriodeDisplay(item);
+  const siklus = getSiklusDisplay(item).toUpperCase();
   const status = getStatusDisplay(item).toUpperCase();
+  const activeOvertime = getActiveOvertimeDetails(c);
+  const overtimeSummary = getOvertimeDetailSummary(c);
+  const kasbonInfo = resolveSlipKasbonInfo(item, c, liveSaldoKasbon);
 
   const doc = new jsPDF({
     orientation: 'landscape',
@@ -35,7 +47,7 @@ export function downloadSingleSlipPDF(item: PayrollRecord): void {
   doc.text('PT. SARANA PUTRA DAERAH', left, y + 3);
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(8);
-  doc.text(`SLIP GAJI RESMI KARYAWAN  •  PERIODE: ${periode}`, left, y + 7.5);
+  doc.text(`SLIP GAJI RESMI KARYAWAN (${siklus})  •  PERIODE: ${periode}`, left, y + 7.5);
 
   // Division badge box
   doc.setFillColor(237, 242, 247);
@@ -138,34 +150,66 @@ export function downloadSingleSlipPDF(item: PayrollRecord): void {
     'Iuran BPJS',
     formatRupiah(c.bpjs),
   ]);
-  drawRow([
-    `Harian ${formatRupiah(c.nomHari)} | Jam ${formatRupiah(c.nomJam)} | Inap ${formatRupiah(c.nomInap)}`,
-    '-',
-    '-',
-    '-',
-  ]);
+  if (activeOvertime.length > 0 || kasbonInfo.hasKasbonNotice) {
+    drawRow([
+      activeOvertime.length > 0 ? overtimeSummary : '-',
+      '-',
+      kasbonInfo.hasKasbonNotice ? 'Sisa Hutang / Kasbon' : '-',
+      kasbonInfo.hasKasbonNotice
+        ? kasbonInfo.sisaKasbon > 0
+          ? formatRupiah(kasbonInfo.sisaKasbon)
+          : 'Lunas (Rp 0)'
+        : '-',
+    ]);
+  }
   drawRow(
     ['GAJI KOTOR', formatRupiah(c.gajiKotor), 'JUMLAH POTONGAN', formatRupiah(c.totalPot)],
     { bold: true, fill: [247, 250, 252] },
   );
 
-  y += 2.5;
+  y += 2;
 
   // THP Banner
   doc.setFillColor(237, 242, 247);
-  doc.rect(left, y, width, 8, 'FD');
-  doc.line(left + 122, y, left + 122, y + 8);
-  doc.line(left + 170, y, left + 170, y + 8);
+  doc.rect(left, y, width, 7.5, 'FD');
+  doc.line(left + 122, y, left + 122, y + 7.5);
+  doc.line(left + 170, y, left + 170, y + 7.5);
 
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(9.5);
-  doc.text('GAJI BERSIH (TAKE HOME PAY)', left + 3, y + 5.3);
+  doc.text('GAJI BERSIH (TAKE HOME PAY)', left + 3, y + 5.1);
   doc.setFontSize(10.5);
-  doc.text(formatRupiah(c.thp), left + 168, y + 5.4, { align: 'right' });
+  doc.text(formatRupiah(c.thp), left + 168, y + 5.2, { align: 'right' });
   doc.setFontSize(8);
-  doc.text(`STATUS: ${status}`, left + 187, y + 5.2, { align: 'center' });
+  doc.text(`STATUS: ${status}`, left + 187, y + 5, { align: 'center' });
 
-  y += 14;
+  y += 9.5;
+
+  if (kasbonInfo.hasKasbonNotice) {
+    doc.setFillColor(255, 251, 235);
+    doc.setDrawColor(217, 119, 6);
+    doc.setLineWidth(0.3);
+    doc.rect(left, y, width, 6.2, 'FD');
+    doc.setDrawColor(0);
+
+    const sisaLabel =
+      kasbonInfo.sisaKasbon > 0 ? formatRupiah(kasbonInfo.sisaKasbon) : 'LUNAS (Rp 0)';
+    const awalPart =
+      kasbonInfo.saldoAwal > 0 ? `Saldo Awal: ${formatRupiah(kasbonInfo.saldoAwal)}  •  ` : '';
+    doc.setTextColor(120, 53, 15);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(7.4);
+    doc.text(
+      `INFO KASBON: ${awalPart}Potongan Gaji: ${formatRupiah(kasbonInfo.potonganKasbon)}  •  Sisa Kasbon / Hutang: ${sisaLabel}`,
+      left + 2.5,
+      y + 4.1,
+      { maxWidth: width - 5 },
+    );
+    doc.setTextColor(0, 0, 0);
+    y += 9;
+  } else {
+    y += 4;
+  }
 
   // Signatures
   doc.setFont('helvetica', 'normal');
@@ -175,8 +219,8 @@ export function downloadSingleSlipPDF(item: PayrollRecord): void {
 
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(8.5);
-  doc.text(`( ${item.nama || 'Karyawan'} )`, left + 51, y + 14, { align: 'center' });
-  doc.text('( PT. SARANA PUTRA DAERAH )', left + 153, y + 14, { align: 'center' });
+  doc.text(`( ${item.nama || 'Karyawan'} )`, left + 51, y + 12, { align: 'center' });
+  doc.text('( PT. SARANA PUTRA DAERAH )', left + 153, y + 12, { align: 'center' });
 
   const safeName = (item.nama || 'Karyawan').replace(/[^a-zA-Z0-9]/g, '_');
   const safePeriode = periode.replace(/[^a-zA-Z0-9-]/g, '_');

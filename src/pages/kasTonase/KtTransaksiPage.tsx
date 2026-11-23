@@ -458,7 +458,7 @@ export function KtTransaksiPage() {
         suiteLabel="Kas & Tonase"
         pageLabel="Transaksi baru"
         title={editId ? `Edit Transaksi: ${nota}` : 'Transaksi Baru'}
-        subtitle={
+        meta={
           <div className="flex flex-wrap items-center gap-3 mt-1">
             <span>
               Nota <b className="t-text font-mono-num">{nota}</b>

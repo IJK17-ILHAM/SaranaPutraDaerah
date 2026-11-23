@@ -53,6 +53,8 @@ export interface PayrollRecord {
   pph?: number | string;
   gajiKotor?: number | string;
   kasbon?: number | string;
+  saldoKasbonAwal?: number | string;
+  sisaKasbonSetelah?: number | string;
   bpjs?: number | string;
   keterangan?: string;
   totalPotongan?: number | string;

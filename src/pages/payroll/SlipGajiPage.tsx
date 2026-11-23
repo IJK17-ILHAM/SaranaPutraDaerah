@@ -10,7 +10,13 @@ import type { PayrollRecord } from '../../types/payroll';
 import { exportPayrollToExcelMultiSheet } from '../../utils/exportExcel';
 import { downloadSingleSlipPDF } from '../../utils/exportPdf';
 import { formatNumberWithDots, formatRupiah } from '../../utils/format';
-import { calculateTHP, getPeriodeDisplay, getStatusDisplay } from '../../utils/payrollCalc';
+import {
+  calculateTHP,
+  getActiveOvertimeDetails,
+  getPeriodeDisplay,
+  getStatusDisplay,
+  resolveSlipKasbonInfo,
+} from '../../utils/payrollCalc';
 
 function getSlipRowKey(item: PayrollRecord, idx: number): string {
   return `${item.nik || 'NONIK'}__${item.nama || 'NONAMA'}__${getPeriodeDisplay(item)}__${idx}`;
@@ -25,6 +31,7 @@ export function SlipGajiPage() {
     divisiOptions,
     filters,
     setFilter,
+    getEmployeeKasbonSaldo,
   } = usePayroll();
 
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -34,6 +41,14 @@ export function SlipGajiPage() {
   const safeIndex = selectedIndex < filteredRecords.length ? selectedIndex : 0;
   const selectedItem = filteredRecords[safeIndex] || null;
   const selectedCalc = selectedItem ? calculateTHP(selectedItem) : null;
+  const selectedLiveKasbon = selectedItem
+    ? getEmployeeKasbonSaldo(selectedItem.nik, selectedItem.nama)
+    : 0;
+  const selectedActiveOvertime = selectedCalc ? getActiveOvertimeDetails(selectedCalc) : [];
+  const selectedKasbonInfo =
+    selectedItem && selectedCalc
+      ? resolveSlipKasbonInfo(selectedItem, selectedCalc, selectedLiveKasbon)
+      : null;
 
   const rowKeys = useMemo(
     () => filteredRecords.map((item, idx) => getSlipRowKey(item, idx)),
@@ -439,6 +454,11 @@ export function SlipGajiPage() {
                   {formatNumberWithDots(selectedCalc?.lemburNominal ?? 0)}
                 </span>
               </div>
+              {selectedActiveOvertime.length > 0 && (
+                <div className="text-[11px] t-muted pl-2 border-l-2 t-border">
+                  Rincian: {selectedActiveOvertime.join(' · ')}
+                </div>
+              )}
               <div className="flex justify-between border-t t-border pt-2">
                 <span className="t-text font-semibold">Gaji Kotor</span>
                 <span className="font-mono-num t-text font-semibold">
@@ -462,13 +482,35 @@ export function SlipGajiPage() {
                 {formatRupiah(selectedCalc?.thp ?? 0)}
               </span>
             </div>
+
+            {selectedKasbonInfo?.hasKasbonNotice && (
+              <div className="p-2.5 rounded-xl t-status-warn text-[11px] space-y-1">
+                <div className="font-bold">Pemberitahuan Hutang / Kasbon</div>
+                <div className="flex justify-between">
+                  <span>Gaji dipotong kasbon:</span>
+                  <span className="font-mono-num font-bold">
+                    {formatRupiah(selectedKasbonInfo.potonganKasbon)}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Sisa hutang / kasbon:</span>
+                  <span className="font-mono-num font-bold">
+                    {selectedKasbonInfo.sisaKasbon > 0
+                      ? formatRupiah(selectedKasbonInfo.sisaKasbon)
+                      : 'Lunas (Rp 0)'}
+                  </span>
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="grid grid-cols-2 gap-2.5">
             <button
               type="button"
               disabled={!selectedItem}
-              onClick={() => selectedItem && downloadSingleSlipPDF(selectedItem)}
+              onClick={() =>
+                selectedItem && downloadSingleSlipPDF(selectedItem, selectedLiveKasbon)
+              }
               className="py-2.5 rounded-xl t-btn-secondary text-xs font-semibold inline-flex items-center justify-center gap-1.5 disabled:opacity-50"
             >
               <Download className="w-3.5 h-3.5" />

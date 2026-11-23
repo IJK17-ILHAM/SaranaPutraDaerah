@@ -5,7 +5,7 @@ import type {
   PayrollCycle,
   PayrollRecord,
 } from '../types/payroll';
-import { cleanRupiahToNumber } from './format';
+import { cleanRupiahToNumber, formatRupiah } from './format';
 
 export function getSkemaDisplay(item: PayrollRecord): DivisionName {
   const raw = (item.skema || item.tipe || item.divisi || '').toString().toLowerCase();
@@ -151,3 +151,73 @@ export function buildDivisionSummary(items: PayrollRecord[]): DivisionSummaryRow
   });
   return Object.values(map).sort((a, b) => b.thp - a.thp);
 }
+
+/**
+ * Returns only the overtime breakdown entries that the employee actually has (> 0),
+ * avoiding noisy "Rp 0" items on pay slips.
+ */
+export function getActiveOvertimeDetails(c: PayrollCalculation): string[] {
+  const details: string[] = [];
+  if (c.nomHari > 0 || c.lemburHari > 0) {
+    const qty = c.lemburHari > 0 ? ` (${c.lemburHari} HR)` : '';
+    details.push(`Harian${qty}: ${formatRupiah(c.nomHari)}`);
+  }
+  if (c.nomJam > 0 || c.totalJam > 0) {
+    const qty = c.totalJam > 0 ? ` (${c.totalJam} Jam)` : '';
+    details.push(`Jam${qty}: ${formatRupiah(c.nomJam)}`);
+  }
+  if (c.nomInap > 0 || c.inap > 0) {
+    const qty = c.inap > 0 ? ` (${c.inap} Inap)` : '';
+    details.push(`Inap${qty}: ${formatRupiah(c.nomInap)}`);
+  }
+  return details;
+}
+
+export function getOvertimeDetailSummary(c: PayrollCalculation): string {
+  const active = getActiveOvertimeDetails(c);
+  if (active.length === 0) return 'Tidak ada lembur';
+  return `Rincian: ${active.join(' | ')}`;
+}
+
+export interface SlipKasbonInfo {
+  hasKasbonNotice: boolean;
+  saldoAwal: number;
+  potonganKasbon: number;
+  sisaKasbon: number;
+}
+
+/**
+ * Resolves kasbon deduction and remaining debt balance for a pay slip,
+ * combining snapshot values stored on the payroll record with the employee's live kasbon balance.
+ */
+export function resolveSlipKasbonInfo(
+  item: PayrollRecord,
+  c: PayrollCalculation,
+  liveSaldoKasbon = 0,
+): SlipKasbonInfo {
+  const potonganKasbon = Math.max(0, c.kasbon || 0);
+  const hasRecordedSisa =
+    item.sisaKasbonSetelah !== undefined &&
+    item.sisaKasbonSetelah !== null &&
+    item.sisaKasbonSetelah !== '';
+  const hasRecordedAwal =
+    item.saldoKasbonAwal !== undefined &&
+    item.saldoKasbonAwal !== null &&
+    item.saldoKasbonAwal !== '';
+
+  const sisaKasbon = hasRecordedSisa
+    ? Math.max(0, cleanRupiahToNumber(item.sisaKasbonSetelah))
+    : Math.max(0, liveSaldoKasbon || 0);
+
+  const saldoAwal = hasRecordedAwal
+    ? Math.max(0, cleanRupiahToNumber(item.saldoKasbonAwal))
+    : sisaKasbon + potonganKasbon;
+
+  return {
+    hasKasbonNotice: potonganKasbon > 0 || sisaKasbon > 0,
+    saldoAwal,
+    potonganKasbon,
+    sisaKasbon,
+  };
+}
+

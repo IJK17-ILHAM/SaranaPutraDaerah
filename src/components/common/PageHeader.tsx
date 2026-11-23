@@ -7,6 +7,7 @@ interface PageHeaderProps {
   pageLabel: string;
   title: string;
   subtitle?: React.ReactNode;
+  meta?: React.ReactNode;
   actions?: React.ReactNode;
 }
 
@@ -14,7 +15,7 @@ export function PageHeader({
   suiteLabel,
   pageLabel,
   title,
-  subtitle,
+  meta,
   actions,
 }: PageHeaderProps) {
   const { activeMenu, theme } = useApp();
@@ -34,7 +35,7 @@ export function PageHeader({
           <h1 className="text-[28px] sm:text-[32px] leading-[34px] sm:leading-[38px] font-bold tracking-[-0.025em] t-text">
             {title}
           </h1>
-          {subtitle && <div className="text-sm t-muted mt-1">{subtitle}</div>}
+          {meta && <div className="text-sm t-muted mt-1">{meta}</div>}
         </div>
       </div>
       {actions && <div className="flex flex-wrap items-center gap-2 shrink-0">{actions}</div>}
