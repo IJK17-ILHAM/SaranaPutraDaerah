@@ -10,6 +10,7 @@ import {
 import type { KtTransaction } from '../../types/kasTonase';
 import type { PayrollRecord } from '../../types/payroll';
 import {
+  cleanRupiahToNumber,
   formatDateFullID,
   formatDateShortID,
   formatNumberWithDots,
@@ -18,8 +19,7 @@ import {
 } from '../../utils/format';
 import {
   calculateTHP,
-  getActiveOvertimeDetails,
-  getOvertimeDetailSummary,
+  getActiveOvertimeRows,
   getPeriodeDisplay,
   getSiklusDisplay,
   getStatusDisplay,
@@ -37,195 +37,504 @@ export function SingleEnvelopeSlip({
   const c = calculateTHP(item);
   const periode = getPeriodeDisplay(item);
   const siklus = getSiklusDisplay(item);
-  const activeOvertime = getActiveOvertimeDetails(c);
-  const overtimeSummary = getOvertimeDetailSummary(c);
+  const status = getStatusDisplay(item).toUpperCase();
+  const activeOvertimeRows = getActiveOvertimeRows(c);
   const kasbonInfo = resolveSlipKasbonInfo(item, c, liveSaldoKasbon);
+  const tunjanganVal = cleanRupiahToNumber(item.tunjangan);
 
   const pokokLabel = c.isTrip
     ? `Gaji Pokok (${c.unitPokok} Trip × ${formatRupiah(c.tarifPokok)})`
     : `Gaji Pokok (${c.unitPokok} HR × ${formatRupiah(c.tarifPokok)})`;
   const unitLabel = c.isTrip
-    ? `${c.unitPokok} Trip • ${c.breakdownText}`
-    : `${c.unitPokok} HR • ${c.breakdownText}`;
+    ? `${c.unitPokok} Trip${c.lemburNominal > 0 ? ` • ${c.breakdownText}` : ''}`
+    : `${c.unitPokok} HR${c.lemburNominal > 0 ? ` • ${c.breakdownText}` : ''}`;
+  const kasbonLabel =
+    c.keterangan && c.keterangan !== '-' ? `Potongan Kasbon (${c.keterangan})` : 'Potongan Kasbon';
+  const sisaKasbonText = kasbonInfo.hasKasbonNotice
+    ? kasbonInfo.sisaKasbon > 0
+      ? formatRupiah(kasbonInfo.sisaKasbon)
+      : 'Lunas (Rp 0)'
+    : '–';
+
+  const incomeRows: Array<{ label: string; value: string }> = [
+    { label: pokokLabel, value: formatRupiah(c.gapok) },
+    ...(activeOvertimeRows.length > 0
+      ? activeOvertimeRows.map((row) => ({ label: row.label, value: formatRupiah(row.amount) }))
+      : [{ label: 'Lembur', value: '–' }]),
+  ];
+  if (tunjanganVal > 0 || incomeRows.length < 3) {
+    incomeRows.push({
+      label: 'Tunjangan Lainnya',
+      value: tunjanganVal > 0 ? formatRupiah(tunjanganVal) : '–',
+    });
+  }
 
   return (
     <div className="slip-table-container">
-      <table style={{ border: 'none', marginBottom: '4px' }}>
-        <tbody>
-          <tr style={{ border: 'none' }}>
-            <td style={{ border: 'none', width: '65%', padding: 0 }}>
-              <div style={{ fontSize: '13px', fontWeight: 900, color: '#000' }}>
-                PT. SARANA PUTRA DAERAH
-              </div>
-              <div style={{ fontSize: '8.5px', color: '#4a5568' }}>
-                SLIP GAJI RESMI KARYAWAN ({siklus.toUpperCase()}) &bull; PERIODE: <b>{periode}</b>
-              </div>
-            </td>
-            <td style={{ border: 'none', width: '35%', textAlign: 'right', padding: 0 }}>
-              <span
-                style={{
-                  border: '1px solid #000',
-                  background: '#edf2f7',
-                  fontWeight: 'bold',
-                  fontSize: '8.5px',
-                  padding: '2px 6px',
-                  textTransform: 'uppercase',
-                }}
-              >
-                DIVISI: {c.skema}
+      {/* Top Black Header Banner */}
+      <div
+        style={{
+          background: '#000000',
+          color: '#FFFFFF',
+          padding: '15px 24px',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          gap: '16px',
+        }}
+      >
+        <div
+          style={{
+            fontSize: '28px',
+            fontWeight: 900,
+            letterSpacing: '-0.04em',
+            lineHeight: 1,
+            color: '#FFFFFF',
+          }}
+        >
+          spd.
+        </div>
+        <div style={{ textAlign: 'right' }}>
+          <div
+            style={{
+              fontSize: '15px',
+              fontWeight: 800,
+              letterSpacing: '0.04em',
+              color: '#FFFFFF',
+              lineHeight: 1.15,
+            }}
+          >
+            SLIP GAJI
+          </div>
+          <div
+            style={{
+              fontSize: '8.5px',
+              fontWeight: 500,
+              letterSpacing: '0.06em',
+              color: '#D4D4D8',
+              marginTop: '3px',
+            }}
+          >
+            PT. SARANA PUTRA DAERAH
+          </div>
+        </div>
+      </div>
+
+      {/* Main White Body */}
+      <div style={{ padding: '16px 24px 14px 24px', background: '#FFFFFF' }}>
+        {/* Period & Status Row */}
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            gap: '12px',
+            marginBottom: '14px',
+          }}
+        >
+          <div style={{ fontSize: '10.5px', color: '#4B5563' }}>
+            Periode: <b style={{ color: '#000000' }}>{periode}</b> ({siklus})
+          </div>
+          <span
+            style={{
+              border: '1.2px solid #000000',
+              borderRadius: '9999px',
+              padding: '3.5px 14px',
+              fontSize: '9px',
+              fontWeight: 800,
+              letterSpacing: '0.04em',
+              color: '#000000',
+              background: '#FFFFFF',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            STATUS: {status}
+          </span>
+        </div>
+
+        {/* Employee Info Grid (2x2 clean hairlines) */}
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: '1fr 1fr',
+            columnGap: '28px',
+            marginBottom: '14px',
+            fontSize: '10px',
+          }}
+        >
+          <div>
+            <div
+              style={{
+                display: 'flex',
+                gap: '12px',
+                padding: '5px 0',
+                borderBottom: '1px solid #D1D5DB',
+              }}
+            >
+              <span style={{ width: '82px', color: '#6B7280', flexShrink: 0 }}>Nama</span>
+              <span style={{ fontWeight: 700, color: '#000000' }}>{item.nama || '-'}</span>
+            </div>
+            <div
+              style={{
+                display: 'flex',
+                gap: '12px',
+                padding: '5px 0',
+                borderBottom: '1px solid #D1D5DB',
+              }}
+            >
+              <span style={{ width: '82px', color: '#6B7280', flexShrink: 0 }}>No / NIK</span>
+              <span style={{ fontWeight: 700, color: '#000000', fontVariantNumeric: 'tabular-nums' }}>
+                {item.nik || '-'}
               </span>
-            </td>
-          </tr>
-        </tbody>
-      </table>
+            </div>
+          </div>
 
-      <table style={{ marginBottom: '5px' }}>
-        <tbody>
-          <tr style={{ background: '#f7fafc' }}>
-            <td style={{ width: '15%', fontWeight: 'bold' }}>Nama Karyawan</td>
-            <td style={{ width: '35%', fontWeight: 'bold' }}>: {item.nama}</td>
-            <td style={{ width: '15%', fontWeight: 'bold' }}>Divisi</td>
-            <td style={{ width: '35%' }}>: {c.skema}</td>
-          </tr>
-          <tr>
-            <td style={{ fontWeight: 'bold' }}>No / NIK</td>
-            <td>: {item.nik}</td>
-            <td style={{ fontWeight: 'bold' }}>Rincian Kerja</td>
-            <td>: {unitLabel}</td>
-          </tr>
-        </tbody>
-      </table>
-
-      <table style={{ marginBottom: '4px' }}>
-        <thead>
-          <tr style={{ background: '#edf2f7', textAlign: 'center', fontWeight: 'bold' }}>
-            <th style={{ width: '33%' }}>KOMPONEN PENGHASILAN</th>
-            <th style={{ width: '17%' }}>JUMLAH (Rp)</th>
-            <th style={{ width: '33%' }}>KOMPONEN POTONGAN</th>
-            <th style={{ width: '17%' }}>JUMLAH (Rp)</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td>{pokokLabel}</td>
-            <td style={{ textAlign: 'right' }}>{formatRupiah(c.gapok)}</td>
-            <td>Potongan Kasbon ({c.keterangan})</td>
-            <td style={{ textAlign: 'right' }}>{formatRupiah(c.kasbon)}</td>
-          </tr>
-          <tr>
-            <td>Lembur ({c.breakdownText})</td>
-            <td style={{ textAlign: 'right' }}>{formatRupiah(c.lemburNominal)}</td>
-            <td>Iuran BPJS</td>
-            <td style={{ textAlign: 'right' }}>{formatRupiah(c.bpjs)}</td>
-          </tr>
-          {(activeOvertime.length > 0 || kasbonInfo.hasKasbonNotice) && (
-            <tr>
-              <td>{activeOvertime.length > 0 ? overtimeSummary : '-'}</td>
-              <td style={{ textAlign: 'right' }}>-</td>
-              <td>{kasbonInfo.hasKasbonNotice ? 'Sisa Hutang / Kasbon' : '-'}</td>
-              <td
-                style={{
-                  textAlign: 'right',
-                  fontWeight: kasbonInfo.hasKasbonNotice ? 'bold' : 'normal',
-                }}
-              >
-                {kasbonInfo.hasKasbonNotice
-                  ? kasbonInfo.sisaKasbon > 0
-                    ? formatRupiah(kasbonInfo.sisaKasbon)
-                    : 'Lunas (Rp 0)'
-                  : '-'}
-              </td>
-            </tr>
-          )}
-          <tr style={{ background: '#f7fafc', fontWeight: 'bold' }}>
-            <td>GAJI KOTOR</td>
-            <td style={{ textAlign: 'right' }}>{formatRupiah(c.gajiKotor)}</td>
-            <td>JUMLAH POTONGAN</td>
-            <td style={{ textAlign: 'right' }}>{formatRupiah(c.totalPot)}</td>
-          </tr>
-        </tbody>
-      </table>
-
-      <table style={{ marginBottom: '6px' }}>
-        <tbody>
-          <tr style={{ background: '#edf2f7' }}>
-            <td style={{ width: '60%', fontWeight: 900, fontSize: '11px' }}>
-              GAJI BERSIH (TAKE HOME PAY)
-            </td>
-            <td
+          <div>
+            <div
               style={{
-                width: '25%',
-                textAlign: 'right',
-                fontWeight: 900,
-                fontSize: '12px',
+                display: 'flex',
+                gap: '12px',
+                padding: '5px 0',
+                borderBottom: '1px solid #D1D5DB',
               }}
             >
-              {formatRupiah(c.thp)}
-            </td>
-            <td
+              <span style={{ width: '86px', color: '#6B7280', flexShrink: 0 }}>Divisi</span>
+              <span style={{ fontWeight: 700, color: '#000000' }}>{c.skema}</span>
+            </div>
+            <div
               style={{
-                width: '15%',
-                textAlign: 'center',
-                fontWeight: 'bold',
-                fontSize: '9px',
+                display: 'flex',
+                gap: '12px',
+                padding: '5px 0',
+                borderBottom: '1px solid #D1D5DB',
               }}
             >
-              STATUS: {getStatusDisplay(item).toUpperCase()}
-            </td>
-          </tr>
-        </tbody>
-      </table>
+              <span style={{ width: '86px', color: '#6B7280', flexShrink: 0 }}>Rincian Kerja</span>
+              <span style={{ fontWeight: 700, color: '#000000', fontVariantNumeric: 'tabular-nums' }}>
+                {unitLabel}
+              </span>
+            </div>
+          </div>
+        </div>
 
-      {kasbonInfo.hasKasbonNotice && (
-        <table style={{ marginBottom: '6px' }}>
-          <tbody>
-            <tr style={{ background: '#fffbeb' }}>
-              <td
+        {/* Two Side-by-Side Rounded Cards: PENGHASILAN & POTONGAN */}
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: '1fr 1fr',
+            gap: '14px',
+            marginBottom: '13px',
+          }}
+        >
+          {/* Left Card: PENGHASILAN */}
+          <div
+            style={{
+              border: '1px solid #D1D5DB',
+              borderRadius: '8px',
+              overflow: 'hidden',
+              display: 'flex',
+              flexDirection: 'column',
+              background: '#FFFFFF',
+            }}
+          >
+            <div
+              style={{
+                background: '#F3F4F6',
+                borderBottom: '1px solid #D1D5DB',
+                padding: '7px 12px',
+                fontSize: '9.5px',
+                fontWeight: 800,
+                letterSpacing: '0.04em',
+                color: '#000000',
+              }}
+            >
+              PENGHASILAN
+            </div>
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+              {incomeRows.map((row, idx) => (
+                <div
+                  key={`${row.label}-${idx}`}
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    gap: '8px',
+                    padding: '6.5px 12px',
+                    borderBottom: '1px solid #E5E7EB',
+                    fontSize: '10px',
+                  }}
+                >
+                  <span style={{ color: '#374151' }}>{row.label}</span>
+                  <span
+                    style={{
+                      fontWeight: 700,
+                      color: '#000000',
+                      whiteSpace: 'nowrap',
+                      fontVariantNumeric: 'tabular-nums',
+                    }}
+                  >
+                    {row.value}
+                  </span>
+                </div>
+              ))}
+              <div
                 style={{
-                  fontSize: '8.5px',
-                  lineHeight: 1.45,
-                  color: '#78350f',
-                  borderColor: '#d97706',
+                  marginTop: 'auto',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  gap: '8px',
+                  padding: '7.5px 12px',
+                  fontSize: '10.5px',
+                  fontWeight: 800,
+                  color: '#000000',
+                  background: '#FFFFFF',
                 }}
               >
-                <b style={{ color: '#92400e' }}>PEMBERITAHUAN HUTANG / KASBON KARYAWAN:</b>{' '}
-                {kasbonInfo.saldoAwal > 0 && (
-                  <>
-                    Saldo Awal <b>{formatRupiah(kasbonInfo.saldoAwal)}</b> &bull;{' '}
-                  </>
-                )}
-                Potongan Gaji Periode Ini{' '}
-                <b style={{ color: '#b91c1c' }}>{formatRupiah(kasbonInfo.potonganKasbon)}</b>{' '}
-                &bull; Sisa Kasbon / Hutang:{' '}
-                <b style={{ color: kasbonInfo.sisaKasbon > 0 ? '#92400e' : '#15803d' }}>
-                  {kasbonInfo.sisaKasbon > 0
-                    ? formatRupiah(kasbonInfo.sisaKasbon)
-                    : 'LUNAS (Rp 0)'}
-                </b>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      )}
-
-      <table style={{ border: 'none' }}>
-        <tbody>
-          <tr style={{ border: 'none' }}>
-            <td style={{ border: 'none', width: '50%', textAlign: 'center', paddingTop: '10px' }}>
-              <div style={{ fontSize: '9px' }}>Diterima Oleh,</div>
-              <div style={{ height: '26px' }} />
-              <div style={{ fontSize: '9.5px', fontWeight: 'bold' }}>( {item.nama} )</div>
-            </td>
-            <td style={{ border: 'none', width: '50%', textAlign: 'center', paddingTop: '10px' }}>
-              <div style={{ fontSize: '9px' }}>Disetujui Oleh, HR / Finance</div>
-              <div style={{ height: '26px' }} />
-              <div style={{ fontSize: '9.5px', fontWeight: 'bold' }}>
-                ( PT. SARANA PUTRA DAERAH )
+                <span>GAJI KOTOR</span>
+                <span style={{ whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>
+                  {formatRupiah(c.gajiKotor)}
+                </span>
               </div>
-            </td>
-          </tr>
-        </tbody>
-      </table>
+            </div>
+          </div>
+
+          {/* Right Card: POTONGAN */}
+          <div
+            style={{
+              border: '1px solid #D1D5DB',
+              borderRadius: '8px',
+              overflow: 'hidden',
+              display: 'flex',
+              flexDirection: 'column',
+              background: '#FFFFFF',
+            }}
+          >
+            <div
+              style={{
+                background: '#F3F4F6',
+                borderBottom: '1px solid #D1D5DB',
+                padding: '7px 12px',
+                fontSize: '9.5px',
+                fontWeight: 800,
+                letterSpacing: '0.04em',
+                color: '#000000',
+              }}
+            >
+              POTONGAN
+            </div>
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  gap: '8px',
+                  padding: '6.5px 12px',
+                  borderBottom: '1px solid #E5E7EB',
+                  fontSize: '10px',
+                }}
+              >
+                <span style={{ color: '#374151' }}>{kasbonLabel}</span>
+                <span
+                  style={{
+                    fontWeight: 700,
+                    color: '#000000',
+                    whiteSpace: 'nowrap',
+                    fontVariantNumeric: 'tabular-nums',
+                  }}
+                >
+                  {formatRupiah(c.kasbon)}
+                </span>
+              </div>
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  gap: '8px',
+                  padding: '6.5px 12px',
+                  borderBottom: '1px solid #E5E7EB',
+                  fontSize: '10px',
+                }}
+              >
+                <span style={{ color: '#374151' }}>Iuran BPJS</span>
+                <span
+                  style={{
+                    fontWeight: 700,
+                    color: '#000000',
+                    whiteSpace: 'nowrap',
+                    fontVariantNumeric: 'tabular-nums',
+                  }}
+                >
+                  {formatRupiah(c.bpjs)}
+                </span>
+              </div>
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  gap: '8px',
+                  padding: '6.5px 12px',
+                  borderBottom: '1px solid #E5E7EB',
+                  fontSize: '10px',
+                }}
+              >
+                <span style={{ color: '#374151' }}>Sisa Hutang / Kasbon</span>
+                <span
+                  style={{
+                    fontWeight: 700,
+                    color: '#000000',
+                    whiteSpace: 'nowrap',
+                    fontVariantNumeric: 'tabular-nums',
+                  }}
+                >
+                  {sisaKasbonText}
+                </span>
+              </div>
+              <div
+                style={{
+                  marginTop: 'auto',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  gap: '8px',
+                  padding: '7.5px 12px',
+                  fontSize: '10.5px',
+                  fontWeight: 800,
+                  color: '#000000',
+                  background: '#FFFFFF',
+                }}
+              >
+                <span>JUMLAH POTONGAN</span>
+                <span style={{ whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>
+                  {formatRupiah(c.totalPot)}
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* GAJI BERSIH (Take Home Pay) Black Rounded Banner */}
+        <div
+          style={{
+            background: '#000000',
+            color: '#FFFFFF',
+            borderRadius: '8px',
+            padding: '12px 18px',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            gap: '16px',
+            marginBottom: kasbonInfo.hasKasbonNotice ? '10px' : '16px',
+          }}
+        >
+          <div>
+            <div
+              style={{
+                fontSize: '11px',
+                fontWeight: 800,
+                letterSpacing: '0.03em',
+                color: '#FFFFFF',
+              }}
+            >
+              GAJI BERSIH
+            </div>
+            <div style={{ fontSize: '9px', color: '#D1D5DB', marginTop: '2px' }}>Take Home Pay</div>
+          </div>
+          <div
+            style={{
+              fontSize: '21px',
+              fontWeight: 900,
+              color: '#FFFFFF',
+              fontVariantNumeric: 'tabular-nums',
+              letterSpacing: '-0.02em',
+            }}
+          >
+            {formatRupiah(c.thp)}
+          </div>
+        </div>
+
+        {/* Info Kasbon Monochrome Accent Strip */}
+        {kasbonInfo.hasKasbonNotice && (
+          <div
+            style={{
+              background: '#F3F4F6',
+              borderRadius: '6px',
+              borderLeft: '3.5px solid #000000',
+              padding: '7.5px 12px',
+              fontSize: '9.5px',
+              color: '#374151',
+              marginBottom: '16px',
+              lineHeight: 1.4,
+            }}
+          >
+            <b style={{ color: '#000000' }}>Info Kasbon:</b>{' '}
+            {kasbonInfo.saldoAwal > 0 && (
+              <>Saldo awal {formatRupiah(kasbonInfo.saldoAwal)} &bull; </>
+            )}
+            Potongan periode ini {formatRupiah(kasbonInfo.potonganKasbon)} &bull; Sisa{' '}
+            {kasbonInfo.sisaKasbon > 0 ? formatRupiah(kasbonInfo.sisaKasbon) : 'Lunas (Rp 0)'}
+          </div>
+        )}
+
+        {/* Signatures */}
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: '1fr 1fr',
+            gap: '64px',
+            padding: '6px 36px 4px 36px',
+            textAlign: 'center',
+          }}
+        >
+          <div>
+            <div style={{ fontSize: '9.5px', color: '#4B5563' }}>Diterima oleh,</div>
+            <div style={{ height: '30px' }} />
+            <div
+              style={{
+                borderTop: '1px solid #000000',
+                paddingTop: '5px',
+                fontSize: '10px',
+                fontWeight: 700,
+                color: '#000000',
+              }}
+            >
+              ( {item.nama || 'Karyawan'} )
+            </div>
+          </div>
+          <div>
+            <div style={{ fontSize: '9.5px', color: '#4B5563' }}>Disetujui oleh, HR / Finance</div>
+            <div style={{ height: '30px' }} />
+            <div
+              style={{
+                borderTop: '1px solid #000000',
+                paddingTop: '5px',
+                fontSize: '10px',
+                fontWeight: 700,
+                color: '#000000',
+              }}
+            >
+              ( PT. Sarana Putra Daerah )
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Bottom Black Footer Bar */}
+      <div
+        style={{
+          background: '#000000',
+          color: '#D4D4D8',
+          textAlign: 'center',
+          padding: '7px 16px',
+          fontSize: '8.5px',
+          letterSpacing: '0.01em',
+        }}
+      >
+        Dokumen ini sah dan diterbitkan oleh PT. Sarana Putra Daerah &bull; Bersifat rahasia
+      </div>
     </div>
   );
 }
@@ -240,148 +549,422 @@ export function CompactSlip({
   const c = calculateTHP(item);
   const periode = getPeriodeDisplay(item);
   const siklus = getSiklusDisplay(item);
-  const activeOvertime = getActiveOvertimeDetails(c);
+  const status = getStatusDisplay(item).toUpperCase();
+  const activeOvertimeRows = getActiveOvertimeRows(c);
   const kasbonInfo = resolveSlipKasbonInfo(item, c, liveSaldoKasbon);
+  const tunjanganVal = cleanRupiahToNumber(item.tunjangan);
   const unit = c.isTrip ? `${c.unitPokok} Trip` : `${c.unitPokok} HR`;
+  const kasbonLabel =
+    c.keterangan && c.keterangan !== '-' ? `Kasbon (${c.keterangan})` : 'Potongan Kasbon';
+  const sisaKasbonText = kasbonInfo.hasKasbonNotice
+    ? kasbonInfo.sisaKasbon > 0
+      ? formatRupiah(kasbonInfo.sisaKasbon)
+      : 'Lunas (Rp 0)'
+    : '–';
+
+  const incomeRows: Array<{ label: string; value: string }> = [
+    {
+      label: c.isTrip ? `Gaji Pokok (${c.unitPokok} Trip)` : `Gaji Pokok (${c.unitPokok} HR)`,
+      value: formatRupiah(c.gapok),
+    },
+    ...(activeOvertimeRows.length > 0
+      ? activeOvertimeRows.map((row) => ({ label: row.label, value: formatRupiah(row.amount) }))
+      : [{ label: 'Lembur', value: '–' }]),
+  ];
+  if (tunjanganVal > 0 || incomeRows.length < 3) {
+    incomeRows.push({
+      label: 'Tunjangan Lainnya',
+      value: tunjanganVal > 0 ? formatRupiah(tunjanganVal) : '–',
+    });
+  }
 
   return (
     <div className="slip-compact-container">
-      <div>
-        <table style={{ border: 'none', marginBottom: '3px' }}>
-          <tbody>
-            <tr style={{ border: 'none' }}>
-              <td style={{ border: 'none', padding: 0 }}>
-                <div style={{ fontWeight: 900, fontSize: '10px' }}>PT. SARANA PUTRA DAERAH</div>
-                <div style={{ fontSize: '7.5px' }}>
-                  SLIP GAJI ({siklus.toUpperCase()}) &bull; PERIODE: <b>{periode}</b>
-                </div>
-              </td>
-              <td style={{ border: 'none', padding: 0, textAlign: 'right', verticalAlign: 'top' }}>
-                <span
-                  style={{
-                    border: '1px solid #000',
-                    padding: '1px 4px',
-                    fontWeight: 'bold',
-                    fontSize: '7.5px',
-                  }}
-                >
-                  {c.skema.toUpperCase()}
-                </span>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-
-        <table style={{ marginBottom: '3px' }}>
-          <tbody>
-            <tr>
-              <td style={{ width: '18%', fontWeight: 'bold' }}>Nama</td>
-              <td style={{ width: '32%', fontWeight: 'bold' }}>{item.nama}</td>
-              <td style={{ width: '18%', fontWeight: 'bold' }}>Divisi</td>
-              <td style={{ width: '32%' }}>{c.skema}</td>
-            </tr>
-            <tr>
-              <td style={{ fontWeight: 'bold' }}>No/NIK</td>
-              <td>{item.nik}</td>
-              <td style={{ fontWeight: 'bold' }}>Kerja</td>
-              <td>
-                {unit} / {c.breakdownText}
-              </td>
-            </tr>
-          </tbody>
-        </table>
-
-        <table style={{ marginBottom: '3px' }}>
-          <thead>
-            <tr style={{ background: '#edf2f7', fontWeight: 'bold', textAlign: 'center' }}>
-              <th>PENGHASILAN</th>
-              <th>NOMINAL</th>
-              <th>POTONGAN</th>
-              <th>NOMINAL</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td>{c.isTrip ? `Trip (${c.unitPokok})` : `Gaji Pokok (${c.unitPokok} HR)`}</td>
-              <td style={{ textAlign: 'right' }}>{formatRupiah(c.gapok)}</td>
-              <td>Kasbon</td>
-              <td style={{ textAlign: 'right' }}>{formatRupiah(c.kasbon)}</td>
-            </tr>
-            <tr>
-              <td>Lembur ({c.breakdownText})</td>
-              <td style={{ textAlign: 'right' }}>{formatRupiah(c.lemburNominal)}</td>
-              <td>BPJS</td>
-              <td style={{ textAlign: 'right' }}>{formatRupiah(c.bpjs)}</td>
-            </tr>
-            <tr>
-              <td colSpan={2} style={{ fontSize: '7px' }}>
-                {activeOvertime.length > 0 ? activeOvertime.join(' | ') : `Ket: ${c.keterangan}`}
-              </td>
-              <td>{kasbonInfo.hasKasbonNotice ? 'Sisa Kasbon' : '-'}</td>
-              <td style={{ textAlign: 'right', fontWeight: kasbonInfo.hasKasbonNotice ? 'bold' : 'normal' }}>
-                {kasbonInfo.hasKasbonNotice
-                  ? kasbonInfo.sisaKasbon > 0
-                    ? formatRupiah(kasbonInfo.sisaKasbon)
-                    : 'Lunas'
-                  : '-'}
-              </td>
-            </tr>
-            <tr style={{ fontWeight: 'bold', background: '#f7fafc' }}>
-              <td>Gaji Kotor</td>
-              <td style={{ textAlign: 'right' }}>{formatRupiah(c.gajiKotor)}</td>
-              <td>Total Pot.</td>
-              <td style={{ textAlign: 'right' }}>{formatRupiah(c.totalPot)}</td>
-            </tr>
-          </tbody>
-        </table>
+      {/* Top Black Header */}
+      <div
+        style={{
+          background: '#000000',
+          color: '#FFFFFF',
+          padding: '7px 10px',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+        }}
+      >
+        <div
+          style={{
+            fontSize: '16px',
+            fontWeight: 900,
+            letterSpacing: '-0.04em',
+            lineHeight: 1,
+            color: '#FFFFFF',
+          }}
+        >
+          spd.
+        </div>
+        <div style={{ textAlign: 'right' }}>
+          <div style={{ fontSize: '9.5px', fontWeight: 800, color: '#FFFFFF', lineHeight: 1.1 }}>
+            SLIP GAJI
+          </div>
+          <div style={{ fontSize: '6.5px', color: '#D4D4D8', marginTop: '1px' }}>
+            PT. SARANA PUTRA DAERAH
+          </div>
+        </div>
       </div>
 
-      <div>
-        <table style={{ marginBottom: '3px' }}>
-          <tbody>
-            <tr style={{ background: '#edf2f7', fontWeight: 900 }}>
-              <td style={{ width: '55%' }}>GAJI BERSIH (THP)</td>
-              <td style={{ width: '45%', textAlign: 'right', fontSize: '9.5px' }}>
-                {formatRupiah(c.thp)}
-              </td>
-            </tr>
-          </tbody>
-        </table>
-
-        {kasbonInfo.hasKasbonNotice && (
+      {/* Main Content */}
+      <div
+        style={{
+          flex: 1,
+          padding: '8px 10px 6px 10px',
+          display: 'flex',
+          flexDirection: 'column',
+          justifyContent: 'space-between',
+          background: '#FFFFFF',
+        }}
+      >
+        <div>
+          {/* Period + Status Pill */}
           <div
             style={{
-              border: '1px solid #d97706',
-              background: '#fffbeb',
-              color: '#78350f',
-              fontSize: '6.8px',
-              padding: '2px 4px',
-              marginBottom: '3px',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              gap: '6px',
+              marginBottom: '6px',
             }}
           >
-            <b>Info Kasbon:</b> Potong Gaji <b>{formatRupiah(kasbonInfo.potonganKasbon)}</b> | Sisa{' '}
-            <b>
-              {kasbonInfo.sisaKasbon > 0 ? formatRupiah(kasbonInfo.sisaKasbon) : 'LUNAS (Rp 0)'}
-            </b>
+            <div style={{ fontSize: '7.5px', color: '#4B5563' }}>
+              Periode: <b style={{ color: '#000000' }}>{periode}</b> ({siklus})
+            </div>
+            <span
+              style={{
+                border: '1px solid #000000',
+                borderRadius: '9999px',
+                padding: '1.5px 7px',
+                fontSize: '6.8px',
+                fontWeight: 800,
+                color: '#000000',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              STATUS: {status}
+            </span>
           </div>
-        )}
 
-        <table style={{ border: 'none' }}>
-          <tbody>
-            <tr style={{ border: 'none' }}>
-              <td style={{ border: 'none', width: '50%', textAlign: 'center', paddingTop: '4px' }}>
-                <div>Penerima,</div>
-                <div style={{ height: '18px' }} />
-                <div style={{ fontWeight: 'bold' }}>({item.nama})</div>
-              </td>
-              <td style={{ border: 'none', width: '50%', textAlign: 'center', paddingTop: '4px' }}>
-                <div>HR / Finance,</div>
-                <div style={{ height: '18px' }} />
-                <div style={{ fontWeight: 'bold' }}>(PT. SPD)</div>
-              </td>
-            </tr>
-          </tbody>
-        </table>
+          {/* Info Grid */}
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: '1fr 1fr',
+              columnGap: '12px',
+              marginBottom: '7px',
+              fontSize: '7.5px',
+            }}
+          >
+            <div>
+              <div
+                style={{
+                  display: 'flex',
+                  gap: '6px',
+                  padding: '2.5px 0',
+                  borderBottom: '1px solid #D1D5DB',
+                }}
+              >
+                <span style={{ width: '44px', color: '#6B7280', flexShrink: 0 }}>Nama</span>
+                <span style={{ fontWeight: 700, color: '#000000' }}>{item.nama || '-'}</span>
+              </div>
+              <div
+                style={{
+                  display: 'flex',
+                  gap: '6px',
+                  padding: '2.5px 0',
+                  borderBottom: '1px solid #D1D5DB',
+                }}
+              >
+                <span style={{ width: '44px', color: '#6B7280', flexShrink: 0 }}>No/NIK</span>
+                <span style={{ fontWeight: 700, color: '#000000' }}>{item.nik || '-'}</span>
+              </div>
+            </div>
+            <div>
+              <div
+                style={{
+                  display: 'flex',
+                  gap: '6px',
+                  padding: '2.5px 0',
+                  borderBottom: '1px solid #D1D5DB',
+                }}
+              >
+                <span style={{ width: '48px', color: '#6B7280', flexShrink: 0 }}>Divisi</span>
+                <span style={{ fontWeight: 700, color: '#000000' }}>{c.skema}</span>
+              </div>
+              <div
+                style={{
+                  display: 'flex',
+                  gap: '6px',
+                  padding: '2.5px 0',
+                  borderBottom: '1px solid #D1D5DB',
+                }}
+              >
+                <span style={{ width: '48px', color: '#6B7280', flexShrink: 0 }}>Kerja</span>
+                <span style={{ fontWeight: 700, color: '#000000' }}>
+                  {unit}
+                  {c.lemburNominal > 0 ? ` • ${c.breakdownText}` : ''}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Side-by-Side Rounded Cards */}
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: '1fr 1fr',
+              gap: '7px',
+              marginBottom: '7px',
+            }}
+          >
+            {/* Penghasilan */}
+            <div
+              style={{
+                border: '1px solid #D1D5DB',
+                borderRadius: '5px',
+                overflow: 'hidden',
+                display: 'flex',
+                flexDirection: 'column',
+              }}
+            >
+              <div
+                style={{
+                  background: '#F3F4F6',
+                  borderBottom: '1px solid #D1D5DB',
+                  padding: '3.5px 6px',
+                  fontSize: '7px',
+                  fontWeight: 800,
+                  color: '#000000',
+                }}
+              >
+                PENGHASILAN
+              </div>
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+                {incomeRows.map((row, idx) => (
+                  <div
+                    key={`${row.label}-${idx}`}
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      gap: '4px',
+                      padding: '3px 6px',
+                      borderBottom: '1px solid #E5E7EB',
+                      fontSize: '7.2px',
+                    }}
+                  >
+                    <span style={{ color: '#374151' }}>{row.label}</span>
+                    <span style={{ fontWeight: 700, color: '#000000', whiteSpace: 'nowrap' }}>
+                      {row.value}
+                    </span>
+                  </div>
+                ))}
+                <div
+                  style={{
+                    marginTop: 'auto',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    gap: '4px',
+                    padding: '4px 6px',
+                    fontSize: '7.5px',
+                    fontWeight: 800,
+                    color: '#000000',
+                  }}
+                >
+                  <span>GAJI KOTOR</span>
+                  <span style={{ whiteSpace: 'nowrap' }}>{formatRupiah(c.gajiKotor)}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Potongan */}
+            <div
+              style={{
+                border: '1px solid #D1D5DB',
+                borderRadius: '5px',
+                overflow: 'hidden',
+                display: 'flex',
+                flexDirection: 'column',
+              }}
+            >
+              <div
+                style={{
+                  background: '#F3F4F6',
+                  borderBottom: '1px solid #D1D5DB',
+                  padding: '3.5px 6px',
+                  fontSize: '7px',
+                  fontWeight: 800,
+                  color: '#000000',
+                }}
+              >
+                POTONGAN
+              </div>
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    gap: '4px',
+                    padding: '3px 6px',
+                    borderBottom: '1px solid #E5E7EB',
+                    fontSize: '7.2px',
+                  }}
+                >
+                  <span style={{ color: '#374151' }}>{kasbonLabel}</span>
+                  <span style={{ fontWeight: 700, color: '#000000', whiteSpace: 'nowrap' }}>
+                    {formatRupiah(c.kasbon)}
+                  </span>
+                </div>
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    gap: '4px',
+                    padding: '3px 6px',
+                    borderBottom: '1px solid #E5E7EB',
+                    fontSize: '7.2px',
+                  }}
+                >
+                  <span style={{ color: '#374151' }}>Iuran BPJS</span>
+                  <span style={{ fontWeight: 700, color: '#000000', whiteSpace: 'nowrap' }}>
+                    {formatRupiah(c.bpjs)}
+                  </span>
+                </div>
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    gap: '4px',
+                    padding: '3px 6px',
+                    borderBottom: '1px solid #E5E7EB',
+                    fontSize: '7.2px',
+                  }}
+                >
+                  <span style={{ color: '#374151' }}>Sisa Kasbon</span>
+                  <span style={{ fontWeight: 700, color: '#000000', whiteSpace: 'nowrap' }}>
+                    {sisaKasbonText}
+                  </span>
+                </div>
+                <div
+                  style={{
+                    marginTop: 'auto',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    gap: '4px',
+                    padding: '4px 6px',
+                    fontSize: '7.5px',
+                    fontWeight: 800,
+                    color: '#000000',
+                  }}
+                >
+                  <span>JUMLAH POT.</span>
+                  <span style={{ whiteSpace: 'nowrap' }}>{formatRupiah(c.totalPot)}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Black Rounded THP Banner */}
+          <div
+            style={{
+              background: '#000000',
+              color: '#FFFFFF',
+              borderRadius: '6px',
+              padding: '6px 10px',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              marginBottom: kasbonInfo.hasKasbonNotice ? '5px' : '0',
+            }}
+          >
+            <div>
+              <div style={{ fontSize: '7.8px', fontWeight: 800, color: '#FFFFFF' }}>GAJI BERSIH</div>
+              <div style={{ fontSize: '6.5px', color: '#D1D5DB' }}>Take Home Pay</div>
+            </div>
+            <div style={{ fontSize: '12px', fontWeight: 900, color: '#FFFFFF' }}>
+              {formatRupiah(c.thp)}
+            </div>
+          </div>
+
+          {/* Compact Info Kasbon Strip */}
+          {kasbonInfo.hasKasbonNotice && (
+            <div
+              style={{
+                background: '#F3F4F6',
+                borderRadius: '4px',
+                borderLeft: '2.5px solid #000000',
+                padding: '3.5px 6px',
+                fontSize: '6.6px',
+                color: '#374151',
+              }}
+            >
+              <b style={{ color: '#000000' }}>Info Kasbon:</b>{' '}
+              {kasbonInfo.saldoAwal > 0 && <>Awal {formatRupiah(kasbonInfo.saldoAwal)} &bull; </>}
+              Potong {formatRupiah(kasbonInfo.potonganKasbon)} &bull; Sisa{' '}
+              {kasbonInfo.sisaKasbon > 0 ? formatRupiah(kasbonInfo.sisaKasbon) : 'Lunas (Rp 0)'}
+            </div>
+          )}
+        </div>
+
+        {/* Signatures */}
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: '1fr 1fr',
+            gap: '20px',
+            padding: '4px 12px 2px 12px',
+            textAlign: 'center',
+            fontSize: '7.2px',
+          }}
+        >
+          <div>
+            <div style={{ color: '#4B5563' }}>Diterima oleh,</div>
+            <div style={{ height: '16px' }} />
+            <div
+              style={{
+                borderTop: '1px solid #000000',
+                paddingTop: '2.5px',
+                fontWeight: 700,
+                color: '#000000',
+              }}
+            >
+              ( {item.nama || 'Karyawan'} )
+            </div>
+          </div>
+          <div>
+            <div style={{ color: '#4B5563' }}>Disetujui oleh, HR / Finance</div>
+            <div style={{ height: '16px' }} />
+            <div
+              style={{
+                borderTop: '1px solid #000000',
+                paddingTop: '2.5px',
+                fontWeight: 700,
+                color: '#000000',
+              }}
+            >
+              ( PT. Sarana Putra Daerah )
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Bottom Black Footer */}
+      <div
+        style={{
+          background: '#000000',
+          color: '#D4D4D8',
+          textAlign: 'center',
+          padding: '4px 8px',
+          fontSize: '6.2px',
+        }}
+      >
+        Dokumen ini sah dan diterbitkan oleh PT. Sarana Putra Daerah &bull; Bersifat rahasia
       </div>
     </div>
   );

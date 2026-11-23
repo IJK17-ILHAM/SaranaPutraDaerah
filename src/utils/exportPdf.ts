@@ -2,6 +2,7 @@ import { jsPDF } from 'jspdf';
 import type { KtTransaction } from '../types/kasTonase';
 import type { PayrollRecord } from '../types/payroll';
 import {
+  cleanRupiahToNumber,
   formatDateFullID,
   formatNumberWithDots,
   formatRupiah,
@@ -9,8 +10,7 @@ import {
 } from './format';
 import {
   calculateTHP,
-  getActiveOvertimeDetails,
-  getOvertimeDetailSummary,
+  getActiveOvertimeRows,
   getPeriodeDisplay,
   getSiklusDisplay,
   getStatusDisplay,
@@ -20,207 +20,290 @@ import {
 export function downloadSingleSlipPDF(item: PayrollRecord, liveSaldoKasbon = 0): void {
   const c = calculateTHP(item);
   const periode = getPeriodeDisplay(item);
-  const siklus = getSiklusDisplay(item).toUpperCase();
+  const siklus = getSiklusDisplay(item);
   const status = getStatusDisplay(item).toUpperCase();
-  const activeOvertime = getActiveOvertimeDetails(c);
-  const overtimeSummary = getOvertimeDetailSummary(c);
+  const activeOvertimeRows = getActiveOvertimeRows(c);
   const kasbonInfo = resolveSlipKasbonInfo(item, c, liveSaldoKasbon);
+  const tunjanganVal = cleanRupiahToNumber(item.tunjangan);
 
+  // Preserve exact 220 x 110 mm envelope landscape dimensions
   const doc = new jsPDF({
     orientation: 'landscape',
     unit: 'mm',
     format: [220, 110],
   });
 
-  const left = 8;
-  const width = 204;
-  let y = 8;
+  const pageW = 220;
+  const pageH = 110;
+  const marginX = 9;
+  const contentW = pageW - marginX * 2;
 
-  // Outer border
-  doc.setDrawColor(0);
-  doc.setLineWidth(0.5);
-  doc.rect(left - 2, 5, width + 4, 100);
+  const BLACK: [number, number, number] = [0, 0, 0];
+  const WHITE: [number, number, number] = [255, 255, 255];
+  const GRAY_HEADER: [number, number, number] = [243, 244, 246];
+  const GRAY_BORDER: [number, number, number] = [209, 213, 219];
+  const GRAY_DIVIDER: [number, number, number] = [229, 231, 235];
+  const TEXT_MUTED: [number, number, number] = [107, 114, 128];
+  const TEXT_SUB: [number, number, number] = [55, 65, 81];
 
-  // Header
+  // 1. Full-width Black Header Banner
+  doc.setFillColor(...BLACK);
+  doc.rect(0, 0, pageW, 12.5, 'F');
+
+  doc.setTextColor(...WHITE);
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(12);
-  doc.text('PT. SARANA PUTRA DAERAH', left, y + 3);
+  doc.setFontSize(20);
+  doc.text('spd.', marginX, 8.6);
+
+  doc.setFontSize(11);
+  doc.text('SLIP GAJI', pageW - marginX, 6.2, { align: 'right' });
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8);
-  doc.text(`SLIP GAJI RESMI KARYAWAN (${siklus})  •  PERIODE: ${periode}`, left, y + 7.5);
+  doc.setFontSize(6.8);
+  doc.setTextColor(212, 212, 216);
+  doc.text('PT. SARANA PUTRA DAERAH', pageW - marginX, 9.8, { align: 'right' });
 
-  // Division badge box
-  doc.setFillColor(237, 242, 247);
-  doc.setLineWidth(0.3);
-  doc.rect(left + width - 58, y - 0.5, 58, 7.5, 'FD');
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(8);
-  doc.text(`DIVISI: ${c.skema.toUpperCase()}`, left + width - 29, y + 4.3, { align: 'center' });
-
-  y += 11;
-
-  // Employee Info Grid
-  const infoH = 12;
-  doc.setFillColor(247, 250, 252);
-  doc.rect(left, y, width, 6, 'FD');
-  doc.rect(left, y + 6, width, 6, 'S');
-  doc.line(left + 32, y, left + 32, y + infoH);
-  doc.line(left + 102, y, left + 102, y + infoH);
-  doc.line(left + 134, y, left + 134, y + infoH);
-
-  doc.setFontSize(8);
-  doc.setFont('helvetica', 'bold');
-  doc.text('Nama Karyawan', left + 2, y + 4.2);
-  doc.text(`: ${item.nama || '-'}`, left + 34, y + 4.2);
-  doc.text('Divisi', left + 104, y + 4.2);
+  // 2. Meta Row: Period + Status Pill
+  let y = 17.5;
   doc.setFont('helvetica', 'normal');
-  doc.text(`: ${c.skema}`, left + 136, y + 4.2);
-
-  const rincianKerja = c.isTrip
-    ? `${c.unitPokok} Trip • ${c.breakdownText}`
-    : `${c.unitPokok} HR • ${c.breakdownText}`;
-
+  doc.setFontSize(8.2);
+  doc.setTextColor(...TEXT_SUB);
+  doc.text('Periode: ', marginX, y);
+  const perPrefixW = doc.getTextWidth('Periode: ');
   doc.setFont('helvetica', 'bold');
-  doc.text('No / NIK', left + 2, y + 10.2);
+  doc.setTextColor(...BLACK);
+  doc.text(periode, marginX + perPrefixW, y);
+  const perValW = doc.getTextWidth(periode);
   doc.setFont('helvetica', 'normal');
-  doc.text(`: ${item.nik || '-'}`, left + 34, y + 10.2);
+  doc.setTextColor(...TEXT_SUB);
+  doc.text(` (${siklus})`, marginX + perPrefixW + perValW, y);
+
+  // Status Pill Badge
+  const statusText = `STATUS: ${status}`;
   doc.setFont('helvetica', 'bold');
-  doc.text('Rincian Kerja', left + 104, y + 10.2);
-  doc.setFont('helvetica', 'normal');
-  doc.text(`: ${rincianKerja}`, left + 136, y + 10.2);
+  doc.setFontSize(7.2);
+  const pillW = Math.max(28, doc.getTextWidth(statusText) + 9);
+  const pillX = pageW - marginX - pillW;
+  doc.setDrawColor(...BLACK);
+  doc.setLineWidth(0.35);
+  doc.roundedRect(pillX, y - 4.1, pillW, 5.8, 2.9, 2.9, 'S');
+  doc.setTextColor(...BLACK);
+  doc.text(statusText, pillX + pillW / 2, y - 0.3, { align: 'center' });
 
-  y += infoH + 3;
+  // 3. Employee Info Grid (2x2 clean bottom hairlines)
+  y = 24.5;
+  const colGap = 10;
+  const halfW = (contentW - colGap) / 2;
+  const rightColX = marginX + halfW + colGap;
 
-  // Components table
-  const col1 = 68;
-  const col2 = 34;
-  const col3 = 68;
-  const col4 = 34;
-  const rowH = 6.2;
+  const unitLabel = c.isTrip
+    ? `${c.unitPokok} Trip${c.lemburNominal > 0 ? ` • ${c.breakdownText}` : ''}`
+    : `${c.unitPokok} HR${c.lemburNominal > 0 ? ` • ${c.breakdownText}` : ''}`;
 
-  const drawRow = (
-    cells: [string, string, string, string],
-    opts?: { header?: boolean; bold?: boolean; fill?: [number, number, number] },
-  ) => {
-    if (opts?.fill) {
-      doc.setFillColor(...opts.fill);
-      doc.rect(left, y, width, rowH, 'FD');
-    } else {
-      doc.rect(left, y, width, rowH, 'S');
-    }
-    doc.line(left + col1, y, left + col1, y + rowH);
-    doc.line(left + col1 + col2, y, left + col1 + col2, y + rowH);
-    doc.line(left + col1 + col2 + col3, y, left + col1 + col2 + col3, y + rowH);
-
-    doc.setFont('helvetica', opts?.header || opts?.bold ? 'bold' : 'normal');
-    doc.setFontSize(opts?.header ? 7.5 : 7.8);
-
-    if (opts?.header) {
-      doc.text(cells[0], left + col1 / 2, y + 4.2, { align: 'center' });
-      doc.text(cells[1], left + col1 + col2 / 2, y + 4.2, { align: 'center' });
-      doc.text(cells[2], left + col1 + col2 + col3 / 2, y + 4.2, { align: 'center' });
-      doc.text(cells[3], left + col1 + col2 + col3 + col4 / 2, y + 4.2, { align: 'center' });
-    } else {
-      doc.text(cells[0], left + 2, y + 4.2, { maxWidth: col1 - 4 });
-      doc.text(cells[1], left + col1 + col2 - 2, y + 4.2, { align: 'right' });
-      doc.text(cells[2], left + col1 + col2 + 2, y + 4.2, { maxWidth: col3 - 4 });
-      doc.text(cells[3], left + width - 2, y + 4.2, { align: 'right' });
-    }
-    y += rowH;
+  const drawInfoLine = (x: number, ly: number, label: string, val: string) => {
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7.8);
+    doc.setTextColor(...TEXT_MUTED);
+    doc.text(label, x, ly);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(...BLACK);
+    doc.text(val, x + 26, ly, { maxWidth: halfW - 26 });
+    doc.setDrawColor(...GRAY_BORDER);
+    doc.setLineWidth(0.25);
+    doc.line(x, ly + 1.6, x + halfW, ly + 1.6);
   };
 
-  drawRow(['KOMPONEN PENGHASILAN', 'JUMLAH (Rp)', 'KOMPONEN POTONGAN', 'JUMLAH (Rp)'], {
-    header: true,
-    fill: [237, 242, 247],
-  });
+  drawInfoLine(marginX, y, 'Nama', item.nama || '-');
+  drawInfoLine(rightColX, y, 'Divisi', c.skema);
+  drawInfoLine(marginX, y + 5.2, 'No / NIK', item.nik || '-');
+  drawInfoLine(rightColX, y + 5.2, 'Rincian Kerja', unitLabel);
+
+  // 4. Two Side-by-Side Rounded Cards: PENGHASILAN & POTONGAN
+  y = 34;
+  const cardGap = 6;
+  const cardW = (contentW - cardGap) / 2;
+  const rightCardX = marginX + cardW + cardGap;
 
   const pokokLabel = c.isTrip
     ? `Gaji Pokok (${c.unitPokok} Trip x ${formatRupiah(c.tarifPokok)})`
     : `Gaji Pokok (${c.unitPokok} HR x ${formatRupiah(c.tarifPokok)})`;
+  const kasbonLabel =
+    c.keterangan && c.keterangan !== '-' ? `Potongan Kasbon (${c.keterangan})` : 'Potongan Kasbon';
+  const sisaKasbonText = kasbonInfo.hasKasbonNotice
+    ? kasbonInfo.sisaKasbon > 0
+      ? formatRupiah(kasbonInfo.sisaKasbon)
+      : 'Lunas (Rp 0)'
+    : '-';
 
-  drawRow([
-    pokokLabel,
-    formatRupiah(c.gapok),
-    `Potongan Kasbon (${c.keterangan})`,
-    formatRupiah(c.kasbon),
-  ]);
-  drawRow([
-    `Lembur (${c.breakdownText})`,
-    formatRupiah(c.lemburNominal),
-    'Iuran BPJS',
-    formatRupiah(c.bpjs),
-  ]);
-  if (activeOvertime.length > 0 || kasbonInfo.hasKasbonNotice) {
-    drawRow([
-      activeOvertime.length > 0 ? overtimeSummary : '-',
-      '-',
-      kasbonInfo.hasKasbonNotice ? 'Sisa Hutang / Kasbon' : '-',
-      kasbonInfo.hasKasbonNotice
-        ? kasbonInfo.sisaKasbon > 0
-          ? formatRupiah(kasbonInfo.sisaKasbon)
-          : 'Lunas (Rp 0)'
-        : '-',
-    ]);
+  const incomeRows: Array<{ label: string; value: string }> = [
+    { label: pokokLabel, value: formatRupiah(c.gapok) },
+    ...(activeOvertimeRows.length > 0
+      ? activeOvertimeRows.map((row) => ({ label: row.label, value: formatRupiah(row.amount) }))
+      : [{ label: 'Lembur', value: '-' }]),
+  ];
+  if (tunjanganVal > 0 || incomeRows.length < 3) {
+    incomeRows.push({
+      label: 'Tunjangan Lainnya',
+      value: tunjanganVal > 0 ? formatRupiah(tunjanganVal) : '-',
+    });
   }
-  drawRow(
-    ['GAJI KOTOR', formatRupiah(c.gajiKotor), 'JUMLAH POTONGAN', formatRupiah(c.totalPot)],
-    { bold: true, fill: [247, 250, 252] },
-  );
 
-  y += 2;
+  const deductionRows: Array<{ label: string; value: string }> = [
+    { label: kasbonLabel, value: formatRupiah(c.kasbon) },
+    { label: 'Iuran BPJS', value: formatRupiah(c.bpjs) },
+    { label: 'Sisa Hutang / Kasbon', value: sisaKasbonText },
+  ];
 
-  // THP Banner
-  doc.setFillColor(237, 242, 247);
-  doc.rect(left, y, width, 7.5, 'FD');
-  doc.line(left + 122, y, left + 122, y + 7.5);
-  doc.line(left + 170, y, left + 170, y + 7.5);
+  const maxDataRows = Math.max(incomeRows.length, deductionRows.length);
+  const headerH = 5.4;
+  const rowH = maxDataRows > 3 ? 4.4 : 5.0;
+  const footerH = 5.6;
+  const cardH = headerH + maxDataRows * rowH + footerH;
 
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(9.5);
-  doc.text('GAJI BERSIH (TAKE HOME PAY)', left + 3, y + 5.1);
-  doc.setFontSize(10.5);
-  doc.text(formatRupiah(c.thp), left + 168, y + 5.2, { align: 'right' });
-  doc.setFontSize(8);
-  doc.text(`STATUS: ${status}`, left + 187, y + 5, { align: 'center' });
+  const drawCard = (
+    x: number,
+    title: string,
+    rows: Array<{ label: string; value: string }>,
+    totalLabel: string,
+    totalVal: string,
+  ) => {
+    // Gray header fill inside top of card
+    doc.setFillColor(...GRAY_HEADER);
+    doc.roundedRect(x, y, cardW, headerH + 1.5, 2, 2, 'F');
+    doc.setFillColor(...WHITE);
+    doc.rect(x, y + headerH, cardW, cardH - headerH, 'F');
 
-  y += 9.5;
-
-  if (kasbonInfo.hasKasbonNotice) {
-    doc.setFillColor(255, 251, 235);
-    doc.setDrawColor(217, 119, 6);
+    // Outer rounded border
+    doc.setDrawColor(...GRAY_BORDER);
     doc.setLineWidth(0.3);
-    doc.rect(left, y, width, 6.2, 'FD');
-    doc.setDrawColor(0);
+    doc.roundedRect(x, y, cardW, cardH, 2, 2, 'S');
+    doc.line(x, y + headerH, x + cardW, y + headerH);
 
-    const sisaLabel =
-      kasbonInfo.sisaKasbon > 0 ? formatRupiah(kasbonInfo.sisaKasbon) : 'LUNAS (Rp 0)';
-    const awalPart =
-      kasbonInfo.saldoAwal > 0 ? `Saldo Awal: ${formatRupiah(kasbonInfo.saldoAwal)}  •  ` : '';
-    doc.setTextColor(120, 53, 15);
+    // Header text
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(7.4);
+    doc.setTextColor(...BLACK);
+    doc.text(title, x + 3.2, y + 3.8);
+
+    // Data rows
+    let ry = y + headerH;
+    rows.forEach((r) => {
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(7.4);
+      doc.setTextColor(...TEXT_SUB);
+      doc.text(r.label, x + 3.2, ry + rowH - 1.5, { maxWidth: cardW - 28 });
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(...BLACK);
+      doc.text(r.value, x + cardW - 3.2, ry + rowH - 1.5, { align: 'right' });
+
+      ry += rowH;
+      doc.setDrawColor(...GRAY_DIVIDER);
+      doc.setLineWidth(0.2);
+      doc.line(x, ry, x + cardW, ry);
+    });
+
+    // Footer total row pinned at bottom of card
+    const footY = y + cardH - footerH;
+    doc.setDrawColor(...GRAY_DIVIDER);
+    doc.line(x, footY, x + cardW, footY);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(7.8);
+    doc.setTextColor(...BLACK);
+    doc.text(totalLabel, x + 3.2, footY + 3.9);
+    doc.text(totalVal, x + cardW - 3.2, footY + 3.9, { align: 'right' });
+  };
+
+  drawCard(marginX, 'PENGHASILAN', incomeRows, 'GAJI KOTOR', formatRupiah(c.gajiKotor));
+  drawCard(rightCardX, 'POTONGAN', deductionRows, 'JUMLAH POTONGAN', formatRupiah(c.totalPot));
+
+  // 5. GAJI BERSIH Black Rounded Banner
+  y += cardH + 2.6;
+  const thpH = 11.2;
+  doc.setFillColor(...BLACK);
+  doc.roundedRect(marginX, y, contentW, thpH, 2.2, 2.2, 'F');
+
+  doc.setTextColor(...WHITE);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8.8);
+  doc.text('GAJI BERSIH', marginX + 4.5, y + 5.1);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(6.8);
+  doc.setTextColor(209, 213, 219);
+  doc.text('Take Home Pay', marginX + 4.5, y + 8.7);
+
+  doc.setTextColor(...WHITE);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(14.5);
+  doc.text(formatRupiah(c.thp), marginX + contentW - 4.5, y + 7.4, { align: 'right' });
+
+  y += thpH + 2.2;
+
+  // 6. Monochrome Info Kasbon Strip (when employee has kasbon/debt)
+  if (kasbonInfo.hasKasbonNotice) {
+    const infoH = 6.2;
+    doc.setFillColor(...GRAY_HEADER);
+    doc.roundedRect(marginX, y, contentW, infoH, 1.5, 1.5, 'F');
+    doc.setFillColor(...BLACK);
+    doc.rect(marginX, y, 1.2, infoH, 'F');
+
+    const sisaLabel =
+      kasbonInfo.sisaKasbon > 0 ? formatRupiah(kasbonInfo.sisaKasbon) : 'Lunas (Rp 0)';
+    const awalPart =
+      kasbonInfo.saldoAwal > 0 ? `Saldo awal ${formatRupiah(kasbonInfo.saldoAwal)}  •  ` : '';
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(7.2);
+    doc.setTextColor(...BLACK);
+    doc.text('Info Kasbon:', marginX + 3.5, y + 4.1);
+    const lblW = doc.getTextWidth('Info Kasbon: ');
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(...TEXT_SUB);
     doc.text(
-      `INFO KASBON: ${awalPart}Potongan Gaji: ${formatRupiah(kasbonInfo.potonganKasbon)}  •  Sisa Kasbon / Hutang: ${sisaLabel}`,
-      left + 2.5,
+      `${awalPart}Potongan periode ini ${formatRupiah(kasbonInfo.potonganKasbon)}  •  Sisa ${sisaLabel}`,
+      marginX + 3.5 + lblW,
       y + 4.1,
-      { maxWidth: width - 5 },
+      { maxWidth: contentW - 8 - lblW },
     );
-    doc.setTextColor(0, 0, 0);
-    y += 9;
+    y += infoH + 3.2;
   } else {
-    y += 4;
+    y += 3.5;
   }
 
-  // Signatures
+  // 7. Signatures (pinned cleanly above black footer)
+  const sigTopY = Math.min(y + 1, 86.5);
+  const sigLineY = 96.8;
+  const sigNameY = 100.6;
+  const leftSigX = marginX + contentW * 0.24;
+  const rightSigX = marginX + contentW * 0.76;
+
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8);
-  doc.text('Diterima Oleh,', left + 51, y, { align: 'center' });
-  doc.text('Disetujui Oleh, HR / Finance', left + 153, y, { align: 'center' });
+  doc.setFontSize(7.6);
+  doc.setTextColor(...TEXT_SUB);
+  doc.text('Diterima oleh,', leftSigX, sigTopY, { align: 'center' });
+  doc.text('Disetujui oleh, HR / Finance', rightSigX, sigTopY, { align: 'center' });
+
+  doc.setDrawColor(...BLACK);
+  doc.setLineWidth(0.3);
+  doc.line(leftSigX - 24, sigLineY, leftSigX + 24, sigLineY);
+  doc.line(rightSigX - 24, sigLineY, rightSigX + 24, sigLineY);
 
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(8.5);
-  doc.text(`( ${item.nama || 'Karyawan'} )`, left + 51, y + 12, { align: 'center' });
-  doc.text('( PT. SARANA PUTRA DAERAH )', left + 153, y + 12, { align: 'center' });
+  doc.setFontSize(8);
+  doc.setTextColor(...BLACK);
+  doc.text(`( ${item.nama || 'Karyawan'} )`, leftSigX, sigNameY, { align: 'center' });
+  doc.text('( PT. Sarana Putra Daerah )', rightSigX, sigNameY, { align: 'center' });
+
+  // 8. Full-width Black Footer Bar
+  doc.setFillColor(...BLACK);
+  doc.rect(0, pageH - 6.2, pageW, 6.2, 'F');
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(6.6);
+  doc.setTextColor(212, 212, 216);
+  doc.text(
+    'Dokumen ini sah dan diterbitkan oleh PT. Sarana Putra Daerah  •  Bersifat rahasia',
+    pageW / 2,
+    pageH - 2.3,
+    { align: 'center' },
+  );
 
   const safeName = (item.nama || 'Karyawan').replace(/[^a-zA-Z0-9]/g, '_');
   const safePeriode = periode.replace(/[^a-zA-Z0-9-]/g, '_');

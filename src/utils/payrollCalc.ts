@@ -152,6 +152,37 @@ export function buildDivisionSummary(items: PayrollRecord[]): DivisionSummaryRow
   return Object.values(map).sort((a, b) => b.thp - a.thp);
 }
 
+export interface OvertimeRowItem {
+  label: string;
+  amount: number;
+}
+
+/**
+ * Returns structured overtime rows only for overtime types the employee actually has (> 0).
+ */
+export function getActiveOvertimeRows(c: PayrollCalculation): OvertimeRowItem[] {
+  const rows: OvertimeRowItem[] = [];
+  if (c.nomHari > 0 || c.lemburHari > 0) {
+    rows.push({
+      label: c.lemburHari > 0 ? `Lembur Harian (${c.lemburHari} HR)` : 'Lembur Harian',
+      amount: c.nomHari,
+    });
+  }
+  if (c.nomJam > 0 || c.totalJam > 0) {
+    rows.push({
+      label: c.totalJam > 0 ? `Lembur (${c.totalJam} Jam)` : 'Lembur Jam',
+      amount: c.nomJam,
+    });
+  }
+  if (c.nomInap > 0 || c.inap > 0) {
+    rows.push({
+      label: c.inap > 0 ? `Lembur Inap (${c.inap} Inap)` : 'Lembur Inap',
+      amount: c.nomInap,
+    });
+  }
+  return rows;
+}
+
 /**
  * Returns only the overtime breakdown entries that the employee actually has (> 0),
  * avoiding noisy "Rp 0" items on pay slips.
