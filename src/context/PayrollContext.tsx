@@ -78,6 +78,9 @@ interface PayrollContextValue {
   editingPayrollRecord: PayrollRecord | null;
   setEditingPayrollRecord: (rec: PayrollRecord | null) => void;
   saveEmployeeProfile: (input: EmployeeProfileInput) => EmployeeProfile;
+  importEmployeeProfilesBatch: (
+    inputs: EmployeeProfileInput[],
+  ) => { created: number; updated: number };
   deleteEmployeeProfile: (id: string) => void;
   adjustEmployeeKasbon: (employeeId: string, entry: KasbonAdjustmentInput) => void;
   getEmployeeProfile: (nik: string, nama?: string) => EmployeeProfile | undefined;
@@ -444,6 +447,122 @@ export function PayrollProvider({ children }: { children: React.ReactNode }) {
       );
     },
     [persistDeletedKeys, persistEmployeeProfiles],
+  );
+
+  const importEmployeeProfilesBatch = useCallback(
+    (inputs: EmployeeProfileInput[]): { created: number; updated: number } => {
+      if (!inputs.length) return { created: 0, updated: 0 };
+
+      const nowIso = new Date().toISOString();
+      const today = todayISO();
+      const restoredKeys = new Set<string>();
+      inputs.forEach((inp) => {
+        const nk = normalizeNikKey(inp.nik);
+        const nm = normalizeNameKey(inp.nama);
+        if (nk) restoredKeys.add(nk);
+        if (nm) restoredKeys.add(nm);
+      });
+      if (restoredKeys.size > 0) {
+        persistDeletedKeys((prev) => prev.filter((k) => !restoredKeys.has(k)));
+      }
+
+      let created = 0;
+      let updated = 0;
+
+      // Compute summary synchronously against current snapshot while keeping updater pure
+      const nextList = [...employeeProfiles];
+      inputs.forEach((input) => {
+        const cleanNik = input.nik.trim().toUpperCase();
+        const cleanNama = input.nama.trim();
+        if (!cleanNama) return;
+        const cleanSaldo = Math.max(0, Math.round(Number(input.kasbonSaldo) || 0));
+        const numericNik = cleanNik.replace(/\D/g, '')
+          ? String(parseInt(cleanNik.replace(/\D/g, ''), 10))
+          : '';
+
+        const existingIdx = input.id
+          ? nextList.findIndex((p) => p.id === input.id)
+          : nextList.findIndex((p) => {
+              if (cleanNik && normalizeNikKey(p.nik) === normalizeNikKey(cleanNik)) return true;
+              const pDigits = (p.nik || '').replace(/\D/g, '');
+              const pNumeric = pDigits ? String(parseInt(pDigits, 10)) : '';
+              if (numericNik && pNumeric && numericNik === pNumeric) return true;
+              return normalizeNameKey(p.nama) === normalizeNameKey(cleanNama);
+            });
+
+        if (existingIdx >= 0) {
+          const old = nextList[existingIdx];
+          const history = [...(old.kasbonHistory || [])];
+          if (cleanSaldo !== old.kasbonSaldo) {
+            history.unshift({
+              id: makeEntryId('KBN'),
+              tanggal: today,
+              jenis: 'Penyesuaian',
+              nominal: Math.abs(cleanSaldo - old.kasbonSaldo),
+              keterangan: `Import Excel: saldo berubah dari ${formatRupiah(old.kasbonSaldo)} menjadi ${formatRupiah(cleanSaldo)}`,
+            });
+          }
+          nextList[existingIdx] = {
+            ...old,
+            nik: cleanNik || old.nik,
+            nama: cleanNama,
+            divisi: input.divisi,
+            siklusGaji: input.siklusGaji,
+            satuanPokok: input.satuanPokok ?? old.satuanPokok,
+            upahDefault: input.upahDefault || old.upahDefault,
+            upahLemburHariDefault: input.upahLemburHariDefault || old.upahLemburHariDefault,
+            upahPerJamDefault: input.upahPerJamDefault || old.upahPerJamDefault,
+            upahPerInapDefault: input.upahPerInapDefault || old.upahPerInapDefault,
+            namaBank: input.namaBank?.trim() || old.namaBank || '',
+            noRekening: input.noRekening?.trim() || old.noRekening || '',
+            atasNamaRekening: input.atasNamaRekening?.trim() || old.atasNamaRekening || '',
+            kasbonSaldo: cleanSaldo,
+            kasbonHistory: history,
+            catatan: input.catatan?.trim() || old.catatan || '',
+            updatedAt: nowIso,
+          };
+          updated++;
+        } else {
+          const initialHistory: EmployeeKasbonEntry[] =
+            cleanSaldo > 0
+              ? [
+                  {
+                    id: makeEntryId('KBN'),
+                    tanggal: today,
+                    jenis: 'Pinjaman',
+                    nominal: cleanSaldo,
+                    keterangan: 'Saldo awal kasbon (Import Excel Karyawan)',
+                  },
+                ]
+              : [];
+          nextList.unshift({
+            id: makeEntryId('EMP'),
+            nik: cleanNik || '-',
+            nama: cleanNama,
+            divisi: input.divisi,
+            siklusGaji: input.siklusGaji,
+            satuanPokok: input.satuanPokok,
+            upahDefault: input.upahDefault,
+            upahLemburHariDefault: input.upahLemburHariDefault,
+            upahPerJamDefault: input.upahPerJamDefault,
+            upahPerInapDefault: input.upahPerInapDefault,
+            namaBank: (input.namaBank || '').trim(),
+            noRekening: (input.noRekening || '').trim(),
+            atasNamaRekening: (input.atasNamaRekening || '').trim(),
+            kasbonSaldo: cleanSaldo,
+            kasbonHistory: initialHistory,
+            catatan: (input.catatan || '').trim(),
+            updatedAt: nowIso,
+          });
+          created++;
+        }
+      });
+
+      setEmployeeProfiles(nextList);
+      localStorage.setItem(STORAGE_KEYS.PAYROLL_EMPLOYEES, JSON.stringify(nextList));
+      return { created, updated };
+    },
+    [employeeProfiles, persistDeletedKeys],
   );
 
   const deleteEmployeeProfile = useCallback(
@@ -1119,6 +1238,7 @@ export function PayrollProvider({ children }: { children: React.ReactNode }) {
         editingPayrollRecord,
         setEditingPayrollRecord,
         saveEmployeeProfile,
+        importEmployeeProfilesBatch,
         deleteEmployeeProfile,
         adjustEmployeeKasbon,
         getEmployeeProfile,

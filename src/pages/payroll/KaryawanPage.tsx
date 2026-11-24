@@ -9,6 +9,7 @@ import {
   CheckCircle2,
   Clock,
   Download,
+  FileSpreadsheet,
   FileText,
   History,
   Pencil,
@@ -26,6 +27,7 @@ import {
 import { useMemo, useState } from 'react';
 import { PageHeader } from '../../components/common/PageHeader';
 import { RingkasanSpotIcon } from '../../components/common/RingkasanSpotIcons';
+import { EmployeeImportModal } from '../../components/payroll/EmployeeImportModal';
 import { BankAccountBadge, PaymentStatusSelect } from '../../components/payroll/PaymentStatusSelect';
 import {
   DEFAULT_PAYROLL_RATES,
@@ -132,6 +134,9 @@ export function KaryawanPage() {
   // Add/Edit Employee Modal
   const [empModalOpen, setEmpModalOpen] = useState(false);
   const [empForm, setEmpForm] = useState<EmployeeFormState>(EMPTY_EMP_FORM);
+
+  // Import Excel Karyawan Modal
+  const [empImportOpen, setEmpImportOpen] = useState(false);
 
   // Kasbon Ledger Modal
   const [kasbonTargetId, setKasbonTargetId] = useState<string | null>(null);
@@ -357,6 +362,14 @@ export function KaryawanPage() {
             >
               <UserPlus className="w-3.5 h-3.5" />
               <span>Tambah Karyawan</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setEmpImportOpen(true)}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl t-btn-secondary text-xs font-semibold whitespace-nowrap"
+            >
+              <FileSpreadsheet className="w-3.5 h-3.5" />
+              <span>Import Excel Karyawan</span>
             </button>
             <button
               type="button"
@@ -1403,6 +1416,8 @@ export function KaryawanPage() {
           </div>
         </div>
       )}
+      {/* MODAL: IMPORT DATA KARYAWAN EXCEL */}
+      <EmployeeImportModal open={empImportOpen} onClose={() => setEmpImportOpen(false)} />
     </section>
   );
 }
