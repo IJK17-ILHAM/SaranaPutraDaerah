@@ -18,6 +18,7 @@ import type {
   PayrollCycle,
   PayrollFilters,
   PayrollRecord,
+  PayrollStatus,
 } from '../types/payroll';
 import { cleanRupiahToNumber, formatRupiah, isAdminRole, todayISO } from '../utils/format';
 import {
@@ -42,6 +43,9 @@ export interface EmployeeProfileInput {
   upahLemburHariDefault?: number;
   upahPerJamDefault?: number;
   upahPerInapDefault?: number;
+  namaBank?: string;
+  noRekening?: string;
+  atasNamaRekening?: string;
   kasbonSaldo: number;
   catatan?: string;
 }
@@ -69,6 +73,7 @@ interface PayrollContextValue {
   refreshPayroll: (notify?: boolean) => Promise<void>;
   submitPayroll: (payload: PayrollRecord) => Promise<boolean>;
   updatePayrollRecord: (target: PayrollRecord, updated: PayrollRecord) => Promise<boolean>;
+  updatePayrollStatus: (target: PayrollRecord, nextStatus: PayrollStatus) => Promise<boolean>;
   deletePayrollRecord: (target: PayrollRecord) => Promise<void>;
   editingPayrollRecord: PayrollRecord | null;
   setEditingPayrollRecord: (rec: PayrollRecord | null) => void;
@@ -268,6 +273,9 @@ export function PayrollProvider({ children }: { children: React.ReactNode }) {
           upahLemburHariDefault: c.upahLemburHari || DEFAULT_PAYROLL_RATES.upahLemburHari,
           upahPerJamDefault: c.upahPerJam || DEFAULT_PAYROLL_RATES.upahPerJam,
           upahPerInapDefault: c.upahPerInap || DEFAULT_PAYROLL_RATES.upahPerInap,
+          namaBank: (rec.namaBank || '').toString().trim(),
+          noRekening: (rec.noRekening || '').toString().trim(),
+          atasNamaRekening: '',
           kasbonSaldo: 0,
           kasbonHistory: [],
           catatan: '',
@@ -363,6 +371,14 @@ export function PayrollProvider({ children }: { children: React.ReactNode }) {
             upahLemburHariDefault: input.upahLemburHariDefault ?? old.upahLemburHariDefault,
             upahPerJamDefault: input.upahPerJamDefault ?? old.upahPerJamDefault,
             upahPerInapDefault: input.upahPerInapDefault ?? old.upahPerInapDefault,
+            namaBank:
+              input.namaBank !== undefined ? input.namaBank.trim() : (old.namaBank || ''),
+            noRekening:
+              input.noRekening !== undefined ? input.noRekening.trim() : (old.noRekening || ''),
+            atasNamaRekening:
+              input.atasNamaRekening !== undefined
+                ? input.atasNamaRekening.trim()
+                : (old.atasNamaRekening || ''),
             kasbonSaldo: cleanSaldo,
             kasbonHistory: history,
             catatan: (input.catatan || '').trim(),
@@ -396,6 +412,9 @@ export function PayrollProvider({ children }: { children: React.ReactNode }) {
           upahLemburHariDefault: input.upahLemburHariDefault,
           upahPerJamDefault: input.upahPerJamDefault,
           upahPerInapDefault: input.upahPerInapDefault,
+          namaBank: (input.namaBank || '').trim(),
+          noRekening: (input.noRekening || '').trim(),
+          atasNamaRekening: (input.atasNamaRekening || '').trim(),
           kasbonSaldo: cleanSaldo,
           kasbonHistory: initialHistory,
           catatan: (input.catatan || '').trim(),
@@ -414,6 +433,9 @@ export function PayrollProvider({ children }: { children: React.ReactNode }) {
           siklusGaji: input.siklusGaji,
           satuanPokok: input.satuanPokok,
           upahDefault: input.upahDefault,
+          namaBank: (input.namaBank || '').trim(),
+          noRekening: (input.noRekening || '').trim(),
+          atasNamaRekening: (input.atasNamaRekening || '').trim(),
           kasbonSaldo: cleanSaldo,
           kasbonHistory: [],
           catatan: (input.catatan || '').trim(),
@@ -642,6 +664,17 @@ export function PayrollProvider({ children }: { children: React.ReactNode }) {
     [deductKasbonFromPayroll],
   );
 
+  const updatePayrollStatus = useCallback(
+    async (target: PayrollRecord, nextStatus: PayrollStatus): Promise<boolean> => {
+      return updatePayrollRecord(target, {
+        ...target,
+        status: nextStatus,
+        statusBayar: nextStatus,
+      });
+    },
+    [updatePayrollRecord],
+  );
+
   const deletePayrollRecord = useCallback(async (target: PayrollRecord): Promise<void> => {
     setRecords((prev) => {
       const next = prev.filter((r) => !isSamePayrollRecord(r, target));
@@ -769,6 +802,9 @@ export function PayrollProvider({ children }: { children: React.ReactNode }) {
                 ? next[idx].upahPerInapDefault
                 : DEFAULT_PAYROLL_RATES.upahPerInap;
 
+          const incomingBank = (rec.namaBank || '').toString().trim();
+          const incomingRek = (rec.noRekening || '').toString().trim();
+
           if (idx >= 0) {
             const old = next[idx];
             next[idx] = {
@@ -782,6 +818,8 @@ export function PayrollProvider({ children }: { children: React.ReactNode }) {
               upahLemburHariDefault: nextUpahLemburHari,
               upahPerJamDefault: nextUpahPerJam,
               upahPerInapDefault: nextUpahPerInap,
+              namaBank: incomingBank || old.namaBank || '',
+              noRekening: incomingRek || old.noRekening || '',
               updatedAt: nowIso,
             };
           } else {
@@ -796,6 +834,9 @@ export function PayrollProvider({ children }: { children: React.ReactNode }) {
               upahLemburHariDefault: nextUpahLemburHari,
               upahPerJamDefault: nextUpahPerJam,
               upahPerInapDefault: nextUpahPerInap,
+              namaBank: incomingBank,
+              noRekening: incomingRek,
+              atasNamaRekening: '',
               kasbonSaldo: 0,
               kasbonHistory: [],
               catatan: '',
@@ -1011,6 +1052,8 @@ export function PayrollProvider({ children }: { children: React.ReactNode }) {
           prof.upahPerJamDefault || existing?.upahPerJam || DEFAULT_PAYROLL_RATES.upahPerJam,
         upahPerInap:
           prof.upahPerInapDefault || existing?.upahPerInap || DEFAULT_PAYROLL_RATES.upahPerInap,
+        namaBank: prof.namaBank || existing?.namaBank || '',
+        noRekening: prof.noRekening || existing?.noRekening || '',
       });
     });
     return Array.from(map.values());
@@ -1071,6 +1114,7 @@ export function PayrollProvider({ children }: { children: React.ReactNode }) {
         refreshPayroll,
         submitPayroll,
         updatePayrollRecord,
+        updatePayrollStatus,
         deletePayrollRecord,
         editingPayrollRecord,
         setEditingPayrollRecord,

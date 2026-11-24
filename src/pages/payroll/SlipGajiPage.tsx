@@ -1,7 +1,7 @@
 import { CheckSquare, Download, Eye, Printer, Square, X } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { PageHeader } from '../../components/common/PageHeader';
-import { PayrollStatusText } from '../../components/common/StatusBadge';
+import { BankAccountBadge, PaymentStatusSelect } from '../../components/payroll/PaymentStatusSelect';
 import { DIVISIONS, PAYROLL_STATUSES } from '../../config/constants';
 import { useApp } from '../../context/AppContext';
 import { usePayroll } from '../../context/PayrollContext';
@@ -23,7 +23,7 @@ function getSlipRowKey(item: PayrollRecord, idx: number): string {
 }
 
 export function SlipGajiPage() {
-  const { openSlipModal, openBatchSlipModal, showToast } = useApp();
+  const { setActiveMenu, openSlipModal, openBatchSlipModal, showToast } = useApp();
   const {
     records,
     filteredRecords,
@@ -31,7 +31,9 @@ export function SlipGajiPage() {
     divisiOptions,
     filters,
     setFilter,
+    getEmployeeProfile,
     getEmployeeKasbonSaldo,
+    updatePayrollStatus,
   } = usePayroll();
 
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -41,6 +43,9 @@ export function SlipGajiPage() {
   const safeIndex = selectedIndex < filteredRecords.length ? selectedIndex : 0;
   const selectedItem = filteredRecords[safeIndex] || null;
   const selectedCalc = selectedItem ? calculateTHP(selectedItem) : null;
+  const selectedProfile = selectedItem
+    ? getEmployeeProfile(selectedItem.nik, selectedItem.nama)
+    : undefined;
   const selectedLiveKasbon = selectedItem
     ? getEmployeeKasbonSaldo(selectedItem.nik, selectedItem.nama)
     : 0;
@@ -382,7 +387,12 @@ export function SlipGajiPage() {
                           {formatNumberWithDots(c.thp)}
                         </td>
                         <td className="py-3 px-4 text-center">
-                          <PayrollStatusText status={getStatusDisplay(item)} />
+                          <PaymentStatusSelect
+                            status={getStatusDisplay(item)}
+                            employeeName={item.nama}
+                            onChangeStatus={(nextStatus) => updatePayrollStatus(item, nextStatus)}
+                            align="center"
+                          />
                         </td>
                         <td className="py-3 px-4 text-right">
                           <button
@@ -499,6 +509,30 @@ export function SlipGajiPage() {
                       ? formatRupiah(selectedKasbonInfo.sisaKasbon)
                       : 'Lunas (Rp 0)'}
                   </span>
+                </div>
+              </div>
+            )}
+            {selectedItem && (
+              <div className="p-3 rounded-xl t-subtle border t-border space-y-2 text-xs">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="t-field-label">Pembayaran Finance</span>
+                  <PaymentStatusSelect
+                    status={getStatusDisplay(selectedItem)}
+                    employeeName={selectedItem.nama}
+                    onChangeStatus={(nextStatus) => updatePayrollStatus(selectedItem, nextStatus)}
+                    align="right"
+                  />
+                </div>
+                <div className="pt-1.5 border-t t-border">
+                  <div className="text-[10px] t-muted mb-0.5">Rekening Transfer Karyawan:</div>
+                  <BankAccountBadge
+                    namaBank={selectedProfile?.namaBank || selectedItem.namaBank}
+                    noRekening={selectedProfile?.noRekening || selectedItem.noRekening}
+                    atasNama={selectedProfile?.atasNamaRekening}
+                    employeeName={selectedItem.nama}
+                    onEmptyAction={() => setActiveMenu('menu-karyawan')}
+                    emptyActionLabel="Atur di Data Karyawan"
+                  />
                 </div>
               </div>
             )}

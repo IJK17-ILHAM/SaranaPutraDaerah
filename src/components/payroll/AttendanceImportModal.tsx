@@ -71,6 +71,8 @@ const EMPTY_MAPPING: SolutionColumnMapping = {
   upahInapCol: '',
   kasbonCol: '',
   bpjsCol: '',
+  namaBankCol: '',
+  noRekeningCol: '',
   ketCol: '',
 };
 
@@ -334,6 +336,8 @@ export function AttendanceImportModal({
         thp: calc.thp,
         status: 'Draft',
         statusBayar: 'Draft',
+        namaBank: r.namaBank || '',
+        noRekening: r.noRekening || '',
         diinputOleh: user ? `${user.nama} (${user.username || user.email || 'admin'})` : 'Admin',
       };
     });
@@ -583,6 +587,8 @@ export function AttendanceImportModal({
                       { key: 'upahInapCol', label: 'Upah Lembur Inap' },
                       { key: 'kasbonCol', label: 'Potongan Kasbon' },
                       { key: 'bpjsCol', label: 'Iuran BPJS' },
+                      { key: 'namaBankCol', label: 'Nama Bank' },
+                      { key: 'noRekeningCol', label: 'No. Rekening' },
                       { key: 'ketCol', label: 'Keterangan' },
                     ] as const
                   ).map((field) => (

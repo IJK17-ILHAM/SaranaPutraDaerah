@@ -28,6 +28,8 @@ export interface SolutionColumnMapping {
   upahInapCol: string;
   kasbonCol: string;
   bpjsCol: string;
+  namaBankCol: string;
+  noRekeningCol: string;
   ketCol: string;
 }
 
@@ -66,6 +68,8 @@ export interface AttendancePreviewRow {
   upahPerInap: number;
   kasbon: number;
   bpjs: number;
+  namaBank: string;
+  noRekening: string;
   keterangan: string;
   rateFromExcel: boolean;
   overtimeFromExcel: boolean;
@@ -239,6 +243,18 @@ const UPAH_INAP_ALIASES = [
 const KASBON_ALIASES = ['potongan kasbon (rp)', 'potongan kasbon', 'kasbon (rp)', 'kasbon', 'hutang'];
 
 const BPJS_ALIASES = ['iuran bpjs (rp)', 'iuran bpjs', 'bpjs (rp)', 'bpjs'];
+
+const BANK_ALIASES = ['nama bank', 'bank'];
+
+const REKENING_ALIASES = [
+  'no rekening',
+  'no. rekening',
+  'nomor rekening',
+  'rekening',
+  'no rek',
+  'no. rek',
+  'norek',
+];
 
 const KET_ALIASES = ['keterangan', 'ket', 'status', 'catatan', 'exception', 'note', 'remarks'];
 
@@ -536,6 +552,8 @@ export async function parseSolutionAttendanceExcel(
   const tripCol = pick(TRIP_ALIASES);
   const kasbonCol = pick(KASBON_ALIASES);
   const bpjsCol = pick(BPJS_ALIASES);
+  const namaBankCol = pick(BANK_ALIASES);
+  const noRekeningCol = pick(REKENING_ALIASES);
   const ketCol = pick(KET_ALIASES);
 
   const suggestedMapping: SolutionColumnMapping = {
@@ -560,6 +578,8 @@ export async function parseSolutionAttendanceExcel(
     upahInapCol,
     kasbonCol,
     bpjsCol,
+    namaBankCol,
+    noRekeningCol,
     ketCol,
   };
 
@@ -725,6 +745,12 @@ export function buildAttendancePreview(
       const kasbon = mapping.kasbonCol ? parseRupiahCell(row[mapping.kasbonCol]) : 0;
       const hasExcelBpjs = mapping.bpjsCol && hasCellValue(row[mapping.bpjsCol]);
       const bpjs = hasExcelBpjs ? parseRupiahCell(row[mapping.bpjsCol]) : calc?.bpjs || 0;
+      const excelBank = mapping.namaBankCol ? String(row[mapping.namaBankCol] ?? '').trim() : '';
+      const excelRek = mapping.noRekeningCol
+        ? String(row[mapping.noRekeningCol] ?? '').trim()
+        : '';
+      const namaBank = excelBank || matchedEmp?.namaBank || '';
+      const noRekening = excelRek || matchedEmp?.noRekening || '';
       const keterangan = mapping.ketCol ? String(row[mapping.ketCol] ?? '').trim() : '';
 
       const rateFromExcel = Boolean(
@@ -760,6 +786,8 @@ export function buildAttendancePreview(
         upahPerInap,
         kasbon,
         bpjs,
+        namaBank,
+        noRekening,
         keterangan,
         rateFromExcel,
         overtimeFromExcel,
@@ -795,6 +823,8 @@ export function buildAttendancePreview(
       kasbonMax: number;
       bpjsMax: number;
       hasBpjs: boolean;
+      namaBank: string;
+      noRekening: string;
       keterangan: string;
     }
   >();
@@ -851,6 +881,8 @@ export function buildAttendancePreview(
         kasbonMax: 0,
         bpjsMax: 0,
         hasBpjs: false,
+        namaBank: '',
+        noRekening: '',
         keterangan: '',
       });
     }
@@ -903,6 +935,12 @@ export function buildAttendancePreview(
       entry.hasBpjs = true;
       const v = parseRupiahCell(row[mapping.bpjsCol]);
       if (v > entry.bpjsMax) entry.bpjsMax = v;
+    }
+    if (!entry.namaBank && mapping.namaBankCol) {
+      entry.namaBank = String(row[mapping.namaBankCol] ?? '').trim();
+    }
+    if (!entry.noRekening && mapping.noRekeningCol) {
+      entry.noRekening = String(row[mapping.noRekeningCol] ?? '').trim();
     }
     if (ketStr && !isExplicitAbsent && ketLower !== 'hadir' && !entry.keterangan) {
       entry.keterangan = ketStr;
@@ -1007,6 +1045,8 @@ export function buildAttendancePreview(
       upahPerInap,
       kasbon: entry.kasbonMax,
       bpjs: entry.hasBpjs ? entry.bpjsMax : calc?.bpjs || 0,
+      namaBank: entry.namaBank || matchedEmp?.namaBank || '',
+      noRekening: entry.noRekening || matchedEmp?.noRekening || '',
       keterangan: entry.keterangan,
       rateFromExcel,
       overtimeFromExcel,
@@ -1067,6 +1107,8 @@ export function downloadSolutionTemplateExcel(masterEmployees: PayrollRecord[]):
             'Upah Lembur Inap (Rp)': c.upahPerInap || DEFAULT_PAYROLL_RATES.upahPerInap,
             'Potongan Kasbon (Rp)': c.kasbon || 0,
             'Iuran BPJS (Rp)': c.bpjs || 0,
+            Bank: emp.namaBank || '',
+            'No Rekening': emp.noRekening || '',
             Keterangan: emp.keterangan && emp.keterangan !== '-' ? emp.keterangan : '',
           };
         })
@@ -1088,6 +1130,8 @@ export function downloadSolutionTemplateExcel(masterEmployees: PayrollRecord[]):
             'Upah Lembur Inap (Rp)': 50000,
             'Potongan Kasbon (Rp)': 100000,
             'Iuran BPJS (Rp)': 0,
+            Bank: 'BRI',
+            'No Rekening': '0123456789012',
             Keterangan: 'Ke 1',
           },
           {
@@ -1107,6 +1151,8 @@ export function downloadSolutionTemplateExcel(masterEmployees: PayrollRecord[]):
             'Upah Lembur Inap (Rp)': 50000,
             'Potongan Kasbon (Rp)': 0,
             'Iuran BPJS (Rp)': 25000,
+            Bank: 'BCA',
+            'No Rekening': '8765432109',
             Keterangan: '',
           },
           {
@@ -1126,6 +1172,8 @@ export function downloadSolutionTemplateExcel(masterEmployees: PayrollRecord[]):
             'Upah Lembur Inap (Rp)': 60000,
             'Potongan Kasbon (Rp)': 150000,
             'Iuran BPJS (Rp)': 0,
+            Bank: 'Mandiri',
+            'No Rekening': '1440012345678',
             Keterangan: 'Ke 2',
           },
         ];
@@ -1213,6 +1261,8 @@ export function downloadSolutionTemplateExcel(masterEmployees: PayrollRecord[]):
     { wch: 21 },
     { wch: 20 },
     { wch: 16 },
+    { wch: 13 },
+    { wch: 20 },
     { wch: 18 },
   ];
   XLSX.utils.book_append_sheet(wb, wsRekap, 'Import_Gaji_Karyawan');

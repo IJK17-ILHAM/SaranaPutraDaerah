@@ -185,6 +185,26 @@ export function isAdminRole(role?: string | null): boolean {
   return r.includes('admin') || r.includes('hr');
 }
 
+export function canEditPaymentStatus(role?: string | null): boolean {
+  const r = (role || '').toString().trim().toLowerCase();
+  if (!r) return true;
+  if (
+    r.includes('finance') ||
+    r.includes('keuangan') ||
+    r.includes('accounting') ||
+    r.includes('akunting') ||
+    r.includes('admin') ||
+    r.includes('hr') ||
+    r.includes('owner') ||
+    r.includes('direktur') ||
+    r.includes('manager') ||
+    r.includes('staff')
+  ) {
+    return true;
+  }
+  return !(r === 'viewer' || r === 'readonly' || r === 'karyawan' || r === 'employee');
+}
+
 export function getInitials(name: string): string {
   const parts = String(name || 'US')
     .trim()

@@ -61,6 +61,8 @@ export interface PayrollRecord {
   thp?: number | string;
   status?: string;
   statusBayar?: string;
+  namaBank?: string;
+  noRekening?: string;
   diinputOleh?: string;
   localDraftId?: string;
   savedAt?: string;
@@ -122,6 +124,9 @@ export interface EmployeeProfile {
   upahLemburHariDefault?: number;
   upahPerJamDefault?: number;
   upahPerInapDefault?: number;
+  namaBank?: string;
+  noRekening?: string;
+  atasNamaRekening?: string;
   kasbonSaldo: number;
   kasbonHistory: EmployeeKasbonEntry[];
   catatan?: string;

@@ -4,6 +4,7 @@ import {
   BadgeCheck,
   Banknote,
   Briefcase,
+  Building2,
   CalendarRange,
   CheckCircle2,
   Clock,
@@ -25,7 +26,7 @@ import {
 import { useMemo, useState } from 'react';
 import { PageHeader } from '../../components/common/PageHeader';
 import { RingkasanSpotIcon } from '../../components/common/RingkasanSpotIcons';
-import { PayrollStatusText } from '../../components/common/StatusBadge';
+import { BankAccountBadge, PaymentStatusSelect } from '../../components/payroll/PaymentStatusSelect';
 import {
   DEFAULT_PAYROLL_RATES,
   DIVISIONS,
@@ -60,9 +61,29 @@ interface EmployeeFormState {
   siklusGaji: PayrollCycle;
   satuanPokok: 'trip' | 'hari';
   upahDefault: string;
+  namaBank: string;
+  noRekening: string;
+  atasNamaRekening: string;
   kasbonSaldo: string;
   catatan: string;
 }
+
+const COMMON_BANKS = [
+  'BCA',
+  'BRI',
+  'Mandiri',
+  'BNI',
+  'BSI',
+  'CIMB Niaga',
+  'Danamon',
+  'Permata',
+  'BTN',
+  'Bank BJB',
+  'Bank DKI',
+  'SeaBank',
+  'Bank Jago',
+  'OCBC',
+];
 
 const EMPTY_EMP_FORM: EmployeeFormState = {
   nama: '',
@@ -71,6 +92,9 @@ const EMPTY_EMP_FORM: EmployeeFormState = {
   siklusGaji: 'Mingguan',
   satuanPokok: 'hari',
   upahDefault: formatNumberWithDots(DEFAULT_PAYROLL_RATES.upahPerHari),
+  namaBank: '',
+  noRekening: '',
+  atasNamaRekening: '',
   kasbonSaldo: '0',
   catatan: '',
 };
@@ -88,8 +112,10 @@ export function KaryawanPage() {
     saveEmployeeProfile,
     deleteEmployeeProfile,
     adjustEmployeeKasbon,
+    getEmployeeProfile,
     getEmployeeKasbonSaldo,
     setEditingPayrollRecord,
+    updatePayrollStatus,
     deletePayrollRecord,
   } = usePayroll();
 
@@ -149,6 +175,9 @@ export function KaryawanPage() {
         !emp.nama.toLowerCase().includes(q) &&
         !emp.nik.toLowerCase().includes(q) &&
         !emp.divisi.toLowerCase().includes(q) &&
+        !(emp.namaBank || '').toLowerCase().includes(q) &&
+        !(emp.noRekening || '').toLowerCase().includes(q) &&
+        !(emp.atasNamaRekening || '').toLowerCase().includes(q) &&
         !(emp.catatan || '').toLowerCase().includes(q)
       ) {
         return false;
@@ -184,6 +213,9 @@ export function KaryawanPage() {
         emp.upahDefault ||
           (isTrip ? DEFAULT_PAYROLL_RATES.upahPerTrip : DEFAULT_PAYROLL_RATES.upahPerHari),
       ),
+      namaBank: emp.namaBank || '',
+      noRekening: emp.noRekening || '',
+      atasNamaRekening: emp.atasNamaRekening || '',
       kasbonSaldo: formatNumberWithDots(emp.kasbonSaldo || 0),
       catatan: emp.catatan || '',
     });
@@ -223,6 +255,9 @@ export function KaryawanPage() {
             ? 'hari'
             : empForm.satuanPokok,
       upahDefault: cleanRupiahToNumber(empForm.upahDefault),
+      namaBank: empForm.namaBank.trim(),
+      noRekening: empForm.noRekening.trim(),
+      atasNamaRekening: empForm.atasNamaRekening.trim(),
       kasbonSaldo: cleanRupiahToNumber(empForm.kasbonSaldo),
       catatan: empForm.catatan,
     });
@@ -430,7 +465,7 @@ export function KaryawanPage() {
                   type="text"
                   value={empSearch}
                   onChange={(e) => setEmpSearch(e.target.value)}
-                  placeholder="Nama / NIK / catatan..."
+                  placeholder="Nama / NIK / No. Rekening..."
                   className="w-full text-xs pl-8 pr-3 py-2 rounded-xl t-input"
                 />
               </div>
@@ -497,6 +532,12 @@ export function KaryawanPage() {
                         <span>Divisi</span>
                       </span>
                     </th>
+                    <th className="py-3.5 px-3 t-th-label">
+                      <span className="inline-flex items-center gap-1.5">
+                        <Building2 className="w-3.5 h-3.5 t-muted" />
+                        <span>Rekening Bank</span>
+                      </span>
+                    </th>
                     <th className="py-3.5 px-3 t-th-label text-center">
                       <span className="inline-flex items-center justify-center gap-1.5">
                         <CalendarRange className="w-3.5 h-3.5 t-muted" />
@@ -526,7 +567,7 @@ export function KaryawanPage() {
                 <tbody className="divide-y t-border">
                   {filteredEmployees.length === 0 ? (
                     <tr>
-                      <td colSpan={6} className="p-8 text-center t-muted">
+                      <td colSpan={7} className="p-8 text-center t-muted">
                         Belum ada data karyawan yang cocok. Klik <b>Tambah Karyawan</b> untuk
                         mendaftarkan karyawan Mingguan atau Bulanan.
                       </td>
@@ -546,6 +587,16 @@ export function KaryawanPage() {
                             </div>
                           </td>
                           <td className="py-3 px-3 font-semibold t-text">{emp.divisi}</td>
+                          <td className="py-3 px-3">
+                            <BankAccountBadge
+                              namaBank={emp.namaBank}
+                              noRekening={emp.noRekening}
+                              atasNama={emp.atasNamaRekening}
+                              employeeName={emp.nama}
+                              onEmptyAction={() => openEditEmployee(emp)}
+                              emptyActionLabel="Isi rekening"
+                            />
+                          </td>
                           <td className="py-3 px-3 text-center">
                             <span
                               className={`inline-block px-2.5 py-0.5 rounded-lg text-[11px] font-bold ${
@@ -788,6 +839,7 @@ export function KaryawanPage() {
                     filteredRecords.map((item, idx) => {
                       const c = calculateTHP(item);
                       const siklus = getSiklusDisplay(item);
+                      const profile = getEmployeeProfile(item.nik, item.nama);
                       const sisaKasbonAktif = getEmployeeKasbonSaldo(item.nik, item.nama);
                       return (
                         <tr key={item.recordId || `${item.nik}-${idx}`} className="t-row-hover">
@@ -796,6 +848,18 @@ export function KaryawanPage() {
                             <div className="text-[11px] t-muted font-mono-num">
                               {item.nik} &middot; {c.skema}
                             </div>
+                            <BankAccountBadge
+                              namaBank={profile?.namaBank || item.namaBank}
+                              noRekening={profile?.noRekening || item.noRekening}
+                              atasNama={profile?.atasNamaRekening}
+                              employeeName={item.nama}
+                              compact
+                              onEmptyAction={() => {
+                                if (profile) openEditEmployee(profile);
+                                else setActiveTab('employees');
+                              }}
+                              emptyActionLabel="Isi rekening"
+                            />
                           </td>
                           <td className="py-3 px-3">
                             <span
@@ -840,7 +904,12 @@ export function KaryawanPage() {
                             {formatRupiah(c.thp)}
                           </td>
                           <td className="py-3 px-3 text-center">
-                            <PayrollStatusText status={getStatusDisplay(item)} />
+                            <PaymentStatusSelect
+                              status={getStatusDisplay(item)}
+                              employeeName={item.nama}
+                              onChangeStatus={(nextStatus) => updatePayrollStatus(item, nextStatus)}
+                              align="center"
+                            />
                           </td>
                           <td className="py-3 px-4 text-center whitespace-nowrap">
                             <div className="inline-flex items-center justify-center gap-1.5">
@@ -1039,6 +1108,62 @@ export function KaryawanPage() {
                       }))
                     }
                     className="w-full px-3 py-2 rounded-xl t-input font-mono-num font-bold"
+                  />
+                </div>
+              </div>
+
+              {/* Rekening Bank Pembayaran Gaji */}
+              <div className="p-3.5 rounded-xl t-subtle border t-border space-y-2.5">
+                <div className="inline-flex items-center gap-1.5 text-[11px] font-bold t-text">
+                  <Building2 className="w-3.5 h-3.5 t-link" />
+                  <span>Identitas Rekening Bank (Otomatis tampil untuk Finance)</span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block t-field-label mb-1">Nama Bank</label>
+                    <input
+                      type="text"
+                      list="spd-common-banks"
+                      value={empForm.namaBank}
+                      onChange={(e) => setEmpForm((p) => ({ ...p, namaBank: e.target.value }))}
+                      placeholder="Contoh: BCA / BRI / Mandiri"
+                      className="w-full px-3 py-2 rounded-xl t-input font-semibold"
+                    />
+                    <datalist id="spd-common-banks">
+                      {COMMON_BANKS.map((b) => (
+                        <option key={b} value={b} />
+                      ))}
+                    </datalist>
+                  </div>
+                  <div>
+                    <label className="block t-field-label mb-1">Nomor Rekening</label>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      value={empForm.noRekening}
+                      onChange={(e) =>
+                        setEmpForm((p) => ({
+                          ...p,
+                          noRekening: e.target.value.replace(/[^0-9\s-]/g, ''),
+                        }))
+                      }
+                      placeholder="Contoh: 1234567890"
+                      className="w-full px-3 py-2 rounded-xl t-input font-mono-num font-bold"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="block t-field-label mb-1">
+                    Atas Nama Rekening (Opsional jika sama dengan nama karyawan)
+                  </label>
+                  <input
+                    type="text"
+                    value={empForm.atasNamaRekening}
+                    onChange={(e) =>
+                      setEmpForm((p) => ({ ...p, atasNamaRekening: e.target.value }))
+                    }
+                    placeholder={empForm.nama || 'Sesuai nama di buku tabungan'}
+                    className="w-full px-3 py-2 rounded-xl t-input"
                   />
                 </div>
               </div>

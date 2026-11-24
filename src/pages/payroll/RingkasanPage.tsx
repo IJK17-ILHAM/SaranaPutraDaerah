@@ -10,10 +10,10 @@ import {
   User,
   Wallet,
 } from 'lucide-react';
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { PageHeader } from '../../components/common/PageHeader';
 import { RingkasanSpotIcon } from '../../components/common/RingkasanSpotIcons';
-import { PayrollStatusText } from '../../components/common/StatusBadge';
+import { BankAccountBadge, PaymentStatusSelect } from '../../components/payroll/PaymentStatusSelect';
 import { DIVISIONS } from '../../config/constants';
 import { useApp } from '../../context/AppContext';
 import { usePayroll } from '../../context/PayrollContext';
@@ -35,7 +35,11 @@ export function RingkasanPage() {
     setFilter,
     isSyncing,
     refreshPayroll,
+    getEmployeeProfile,
+    updatePayrollStatus,
   } = usePayroll();
+
+  const [showAllRows, setShowAllRows] = useState(false);
 
   const stats = useMemo(() => {
     let totalThp = 0;
@@ -46,6 +50,7 @@ export function RingkasanPage() {
     let totalUnit = 0;
     let draftCount = 0;
     let approvedCount = 0;
+    let paidCount = 0;
 
     kpiRecords.forEach((d) => {
       const c = calculateTHP(d);
@@ -57,7 +62,8 @@ export function RingkasanPage() {
       totalUnit += c.unitPokok;
 
       const st = getStatusDisplay(d).toLowerCase();
-      if (st === 'approved' || st === 'paid') approvedCount++;
+      if (st === 'paid') paidCount++;
+      else if (st === 'approved') approvedCount++;
       else draftCount++;
     });
 
@@ -69,7 +75,9 @@ export function RingkasanPage() {
       totalBpjs,
       totalUnit,
       draftCount,
-      approvedCount,
+      approvedCount: approvedCount + paidCount,
+      onlyApprovedCount: approvedCount,
+      paidCount,
     };
   }, [kpiRecords]);
 
@@ -79,7 +87,7 @@ export function RingkasanPage() {
     [divisionSummary],
   );
 
-  const recentItems = kpiRecords.slice(0, 5);
+  const recentItems = showAllRows ? kpiRecords : kpiRecords.slice(0, 5);
 
   const bannerText =
     stats.draftCount > 0
@@ -333,8 +341,36 @@ export function RingkasanPage() {
         </div>
       </div>
 
-      {/* Recent Table */}
+      {/* Recent Table — Finance Payment & Status Control */}
       <div className="t-card rounded-2xl overflow-hidden">
+        <div className="px-5 py-3.5 border-b t-border flex flex-wrap items-center justify-between gap-2 text-xs">
+          <div className="flex flex-wrap items-center gap-2.5">
+            <h2 className="t-section-label">Daftar Pembayaran Gaji (Finance)</h2>
+            <span className="text-[11px] t-muted font-mono-num">
+              Paid: <b style={{ color: 'var(--status-ok-text)' }}>{stats.paidCount}</b> &middot;
+              Approved: <b style={{ color: 'var(--status-info-text)' }}>{stats.onlyApprovedCount}</b>{' '}
+              &middot; Draft: <b style={{ color: 'var(--status-warn-text)' }}>{stats.draftCount}</b>
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            {kpiRecords.length > 5 && (
+              <button
+                type="button"
+                onClick={() => setShowAllRows((prev) => !prev)}
+                className="px-3 py-1 rounded-lg t-btn-secondary text-[11px] font-semibold whitespace-nowrap"
+              >
+                {showAllRows ? 'Tampilkan 5 Terbaru' : `Lihat Semua (${kpiRecords.length})`}
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => setActiveMenu('menu-karyawan')}
+              className="text-[11px] t-link font-semibold hover:underline whitespace-nowrap"
+            >
+              Atur Rekening Karyawan
+            </button>
+          </div>
+        </div>
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs">
             <thead>
@@ -342,7 +378,7 @@ export function RingkasanPage() {
                 <th className="py-3.5 px-5 t-th-label">
                   <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
                     <User className="w-3.5 h-3.5 shrink-0 opacity-75" />
-                    <span>Nama</span>
+                    <span>Nama &amp; Rekening</span>
                   </span>
                 </th>
                 <th className="py-3.5 px-4 t-th-label">
@@ -366,7 +402,7 @@ export function RingkasanPage() {
                 <th className="py-3.5 px-5 t-th-label text-right">
                   <span className="inline-flex items-center justify-end gap-1.5 whitespace-nowrap">
                     <BadgeCheck className="w-3.5 h-3.5 shrink-0 opacity-75" />
-                    <span>Status</span>
+                    <span>Status Pembayaran</span>
                   </span>
                 </th>
               </tr>
@@ -388,9 +424,29 @@ export function RingkasanPage() {
               ) : (
                 recentItems.map((item, idx) => {
                   const calc = calculateTHP(item);
+                  const profile = getEmployeeProfile(item.nik, item.nama);
+                  const namaBank = profile?.namaBank || item.namaBank || '';
+                  const noRekening = profile?.noRekening || item.noRekening || '';
+                  const atasNama = profile?.atasNamaRekening || '';
                   return (
-                    <tr key={`${item.nik}-${idx}`} className="t-row-hover">
-                      <td className="py-3 px-5 font-semibold t-text">{item.nama}</td>
+                    <tr key={item.recordId || `${item.nik}-${idx}`} className="t-row-hover">
+                      <td className="py-3 px-5">
+                        <div className="font-semibold t-text">
+                          {item.nama}{' '}
+                          <span className="text-[10px] t-muted font-mono-num font-normal">
+                            &middot; NIK {item.nik}
+                          </span>
+                        </div>
+                        <BankAccountBadge
+                          namaBank={namaBank}
+                          noRekening={noRekening}
+                          atasNama={atasNama}
+                          employeeName={item.nama}
+                          compact
+                          onEmptyAction={() => setActiveMenu('menu-karyawan')}
+                          emptyActionLabel="Isi rekening"
+                        />
+                      </td>
                       <td className="py-3 px-4 t-muted">{calc.skema}</td>
                       <td className="py-3 px-4 t-muted font-mono-num text-[11px]">
                         {getPeriodeDisplay(item)}
@@ -399,7 +455,12 @@ export function RingkasanPage() {
                         {formatRupiah(calc.thp)}
                       </td>
                       <td className="py-3 px-5 text-right">
-                        <PayrollStatusText status={getStatusDisplay(item)} />
+                        <PaymentStatusSelect
+                          status={getStatusDisplay(item)}
+                          employeeName={item.nama}
+                          onChangeStatus={(nextStatus) => updatePayrollStatus(item, nextStatus)}
+                          align="right"
+                        />
                       </td>
                     </tr>
                   );
