@@ -3,6 +3,7 @@ import {
   ArrowRight,
   Calendar,
   CheckCircle2,
+  CloudUpload,
   Download,
   FileSpreadsheet,
   HardDrive,
@@ -11,10 +12,10 @@ import {
   X,
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { DEFAULT_PAYROLL_RATES } from '../../config/constants';
+import { DIVISIONS, PAYROLL_CYCLES } from '../../config/constants';
 import { useApp } from '../../context/AppContext';
 import { usePayroll } from '../../context/PayrollContext';
-import type { PayrollRecord } from '../../types/payroll';
+import type { DivisionName, PayrollCycle, PayrollRecord } from '../../types/payroll';
 import {
   type AttendancePreviewRow,
   type ParsedExcelSheet,
@@ -30,50 +31,100 @@ import {
   formatNumberWithDots,
   formatRupiah,
 } from '../../utils/format';
+import { getPeriodeDisplay } from '../../utils/payrollCalc';
 
 interface AttendanceImportModalProps {
   open: boolean;
   onClose: () => void;
   initialStartISO: string;
   initialEndISO: string;
-  onApplyToForm: (row: AttendancePreviewRow, startISO: string, endISO: string) => void;
-  onSavedBatchDrafts: (count: number, startISO: string, endISO: string) => void;
+  initialPeriodeLabel?: string;
+  onApplyToForm: (row: AttendancePreviewRow, startISO: string, endISO: string, periodeLabel: string) => void;
+  onSavedBatchDrafts: (count: number, startISO: string, endISO: string, periodeLabel: string) => void;
+  onImportedDirect?: (
+    summary: { updated: number; created: number; failed: number },
+    startISO: string,
+    endISO: string,
+    periodeLabel: string,
+  ) => void;
 }
+
+const EMPTY_MAPPING: SolutionColumnMapping = {
+  idCol: '',
+  namaCol: '',
+  divisiCol: '',
+  siklusCol: '',
+  satuanCol: '',
+  tanggalCol: '',
+  jamMasukCol: '',
+  jamPulangCol: '',
+  hariKerjaCol: '',
+  tripCol: '',
+  upahPokokCol: '',
+  upahHariCol: '',
+  upahTripCol: '',
+  lemburHariCol: '',
+  upahLemburHariCol: '',
+  lemburJamCol: '',
+  upahLemburJamCol: '',
+  inapCol: '',
+  upahInapCol: '',
+  kasbonCol: '',
+  bpjsCol: '',
+  ketCol: '',
+};
 
 export function AttendanceImportModal({
   open,
   onClose,
   initialStartISO,
   initialEndISO,
+  initialPeriodeLabel,
   onApplyToForm,
   onSavedBatchDrafts,
+  onImportedDirect,
 }: AttendanceImportModalProps) {
   const { user, showToast } = useApp();
-  const { masterEmployees, saveLocalDraftsBatch } = usePayroll();
+  const {
+    records,
+    masterEmployees,
+    getEmployeeKasbonSaldo,
+    saveLocalDraftsBatch,
+    syncEmployeeRatesFromImport,
+    upsertPayrollBatch,
+  } = usePayroll();
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const uploadedFileRef = useRef<File | null>(null);
+
   const [sheet, setSheet] = useState<ParsedExcelSheet | null>(null);
-  const [mapping, setMapping] = useState<SolutionColumnMapping>({
-    idCol: '',
-    namaCol: '',
-    tanggalCol: '',
-    jamMasukCol: '',
-    jamPulangCol: '',
-    ketCol: '',
-  });
+  const [mapping, setMapping] = useState<SolutionColumnMapping>(EMPTY_MAPPING);
   const [showMapping, setShowMapping] = useState(false);
   const [startISO, setStartISO] = useState(initialStartISO);
   const [endISO, setEndISO] = useState(initialEndISO);
+  const [periodeLabel, setPeriodeLabel] = useState(
+    initialPeriodeLabel ||
+      (initialStartISO && initialEndISO
+        ? formatDateRangeLabel(initialStartISO, initialEndISO)
+        : 'Periode Import'),
+  );
   const [rows, setRows] = useState<AttendancePreviewRow[]>([]);
   const [loadingFile, setLoadingFile] = useState(false);
+  const [importingDirect, setImportingDirect] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
 
   useEffect(() => {
     if (open) {
       setStartISO(initialStartISO);
       setEndISO(initialEndISO);
+      setPeriodeLabel(
+        initialPeriodeLabel ||
+          (initialStartISO && initialEndISO
+            ? formatDateRangeLabel(initialStartISO, initialEndISO)
+            : 'Periode Import'),
+      );
     }
-  }, [initialEndISO, initialStartISO, open]);
+  }, [initialEndISO, initialPeriodeLabel, initialStartISO, open]);
 
   // Rebuild preview whenever sheet, column mapping, or period filter changes
   useEffect(() => {
@@ -85,38 +136,78 @@ export function AttendanceImportModal({
     setRows(nextRows);
   }, [endISO, mapping, masterEmployees, sheet, startISO]);
 
-  const periodeLabel = useMemo(
-    () => (startISO && endISO ? formatDateRangeLabel(startISO, endISO) : 'Periode Import'),
-    [endISO, startISO],
-  );
+  const calcRowThp = (r: AttendancePreviewRow) => {
+    const gapok = r.isTrip ? r.tripInput * r.upahPerTrip : r.hariKerjaInput * r.upahPerHari;
+    const nomHari = r.lemburHari * r.upahLemburHari;
+    const nomJam = r.jamLembur * r.upahPerJam;
+    const nomInap = r.inap * r.upahPerInap;
+    const totalLembur = nomHari + nomJam + nomInap;
+    const kotor = gapok + totalLembur;
+    const pot = r.kasbon + r.bpjs;
+    return { gapok, nomHari, nomJam, nomInap, totalLembur, kotor, pot, thp: kotor - pot };
+  };
 
   const selectedRows = useMemo(() => rows.filter((r) => r.selected), [rows]);
   const matchedCount = useMemo(() => rows.filter((r) => r.matched).length, [rows]);
-  const unmatchedCount = rows.length - matchedCount;
+  const rateExcelCount = useMemo(() => rows.filter((r) => r.rateFromExcel).length, [rows]);
+  const totalSelectedThp = useMemo(
+    () => selectedRows.reduce((sum, r) => sum + calcRowThp(r).thp, 0),
+    [selectedRows],
+  );
+
+  // Detect which rows already exist in records for this period (so user sees "Update" badge)
+  const existingPeriodKeys = useMemo(() => {
+    const set = new Set<string>();
+    const targetPer = periodeLabel.trim().toLowerCase();
+    records.forEach((rec) => {
+      if (getPeriodeDisplay(rec).toLowerCase() !== targetPer) return;
+      const nik = (rec.nik || '').toString().trim().toUpperCase();
+      if (nik) set.add(`NIK:${nik}`);
+      const digits = nik.replace(/\D/g, '');
+      if (digits) set.add(`NUM:${parseInt(digits, 10)}`);
+      const nm = (rec.nama || '').toString().trim().toLowerCase();
+      if (nm) set.add(`NAMA:${nm}`);
+    });
+    return set;
+  }, [periodeLabel, records]);
+
+  const isExistingInPeriod = (r: AttendancePreviewRow): boolean => {
+    const nik = r.nik.trim().toUpperCase();
+    if (nik && existingPeriodKeys.has(`NIK:${nik}`)) return true;
+    const digits = nik.replace(/\D/g, '');
+    if (digits && existingPeriodKeys.has(`NUM:${parseInt(digits, 10)}`)) return true;
+    const nm = r.nama.trim().toLowerCase();
+    return Boolean(nm && existingPeriodKeys.has(`NAMA:${nm}`));
+  };
 
   if (!open) return null;
 
-  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  const loadWorkbookSheet = async (file: File, preferredSheet?: string) => {
     setErrorMsg('');
     setLoadingFile(true);
     try {
-      const parsed = await parseSolutionAttendanceExcel(file);
+      const parsed = await parseSolutionAttendanceExcel(file, preferredSheet);
       setSheet(parsed);
       setMapping(parsed.suggestedMapping);
-      if (parsed.minDate) setStartISO(parsed.minDate);
-      if (parsed.maxDate) setEndISO(parsed.maxDate);
+      if (parsed.detectedMode === 'attendance-log' && parsed.minDate && parsed.maxDate) {
+        setStartISO(parsed.minDate);
+        setEndISO(parsed.maxDate);
+        setPeriodeLabel(formatDateRangeLabel(parsed.minDate, parsed.maxDate));
+      }
 
-      if (!parsed.suggestedMapping.idCol || !parsed.suggestedMapping.tanggalCol) {
+      const missingCore =
+        parsed.detectedMode === 'attendance-log'
+          ? !parsed.suggestedMapping.idCol || !parsed.suggestedMapping.tanggalCol
+          : !parsed.suggestedMapping.idCol && !parsed.suggestedMapping.namaCol;
+
+      if (missingCore) {
         setShowMapping(true);
-        showToast(
-          'File dibaca. Silakan sesuaikan pemetaan kolom ID dan Tanggal di bawah.',
-          'warning',
-        );
+        showToast('File dibaca. Sesuaikan pemetaan kolom agar data terbaca tepat.', 'warning');
       } else {
         showToast(
-          `File ${parsed.fileName} berhasil dibaca (${parsed.rows.length} baris log absensi).`,
+          `Sheet "${parsed.sheetName}" terbaca (${parsed.rows.length} baris · ${
+            parsed.detectedMode === 'payroll-rekap' ? 'Mode Rekap Gaji & Nominal' : 'Mode Log Absensi Harian'
+          }).`,
           'success',
         );
       }
@@ -126,13 +217,28 @@ export function AttendanceImportModal({
       showToast(msg, 'error');
     } finally {
       setLoadingFile(false);
-      if (fileInputRef.current) fileInputRef.current.value = '';
     }
+  };
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    uploadedFileRef.current = file;
+    await loadWorkbookSheet(file);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const handleSwitchSheet = async (nextSheet: string) => {
+    if (!uploadedFileRef.current) return;
+    await loadWorkbookSheet(uploadedFileRef.current, nextSheet);
   };
 
   const handleDownloadTemplate = () => {
     const fname = downloadSolutionTemplateExcel(masterEmployees);
-    showToast(`Template contoh ${fname} berhasil diunduh.`, 'success');
+    showToast(
+      `Template ${fname} diunduh (berisi nominal upah & lembur per karyawan).`,
+      'success',
+    );
   };
 
   const updateRow = (idx: number, patch: Partial<AttendancePreviewRow>) => {
@@ -143,26 +249,38 @@ export function AttendanceImportModal({
     setRows((prev) => prev.map((r) => ({ ...r, selected: checked })));
   };
 
-  const calcRowThp = (r: AttendancePreviewRow) => {
-    const gapok = r.isTrip ? r.tripInput * r.upahPerTrip : r.hariKerjaInput * r.upahPerHari;
-    const nomJam = r.jamLembur * DEFAULT_PAYROLL_RATES.upahPerJam;
-    const nomInap = r.inap * DEFAULT_PAYROLL_RATES.upahPerInap;
-    const kotor = gapok + nomJam + nomInap;
-    const pot = r.kasbon + r.bpjs;
-    return { gapok, nomJam, nomInap, totalLembur: nomJam + nomInap, kotor, pot, thp: kotor - pot };
-  };
-
-  const handleSaveSelectedToLocalDrafts = () => {
-    if (!selectedRows.length) {
-      showToast('Centang minimal 1 karyawan terlebih dahulu.', 'warning');
-      return;
-    }
-
-    const payloads: PayrollRecord[] = selectedRows.map((r) => {
+  const buildPayloads = (list: AttendancePreviewRow[]): PayrollRecord[] => {
+    const cleanPeriode = periodeLabel.trim() || formatDateRangeLabel(startISO, endISO);
+    return list.map((r) => {
       const calc = calcRowThp(r);
       const bp: string[] = [];
+      if (r.lemburHari > 0) bp.push(`${r.lemburHari} Hari`);
       if (r.jamLembur > 0) bp.push(`${r.jamLembur} Jam`);
       if (r.inap > 0) bp.push(`${r.inap} Inap`);
+
+      const lemburJenis =
+        bp.length > 1
+          ? 'Campuran'
+          : r.inap > 0
+            ? 'Menginap'
+            : r.lemburHari > 0
+              ? 'Harian'
+              : 'Jam';
+      const lemburVolume =
+        lemburJenis === 'Menginap'
+          ? r.inap
+          : lemburJenis === 'Harian'
+            ? r.lemburHari
+            : r.jamLembur;
+      const lemburTarif =
+        lemburJenis === 'Menginap'
+          ? r.upahPerInap
+          : lemburJenis === 'Harian'
+            ? r.upahLemburHari
+            : r.upahPerJam;
+
+      const liveSaldo = getEmployeeKasbonSaldo(r.nik, r.nama);
+      const sisaSetelah = Math.max(0, liveSaldo - r.kasbon);
 
       return {
         action: 'save',
@@ -171,33 +289,31 @@ export function AttendanceImportModal({
         divisi: r.divisi,
         skema: r.divisi,
         tipe: r.divisi.toLowerCase(),
+        siklusGaji: r.siklusGaji,
         satuanPokok: r.isTrip ? 'trip' : 'hari',
-        periodeTanggal: periodeLabel,
-        periodeBulan: periodeLabel,
-        periodeWaktu: periodeLabel,
+        periodeTanggal: cleanPeriode,
+        periodeBulan: cleanPeriode,
+        periodeWaktu: cleanPeriode,
         hariKerja: r.isTrip ? 0 : r.hariKerjaInput,
         hadir: r.isTrip ? r.tripInput : r.hariKerjaInput,
-        spsHadir: r.hariFingerprint,
+        spsHadir: r.hariFingerprint || (r.isTrip ? r.tripInput : r.hariKerjaInput),
         spsAlpha: 0,
         upahPerHari: r.isTrip ? 0 : r.upahPerHari,
         trip: r.isTrip ? r.tripInput : 0,
         upahPerTrip: r.isTrip ? r.upahPerTrip : 0,
-        lemburHari: 0,
-        upahLemburHari: DEFAULT_PAYROLL_RATES.upahLemburHari,
-        nominalLemburHari: 0,
+        lemburHari: r.lemburHari,
+        upahLemburHari: r.upahLemburHari,
+        nominalLemburHari: calc.nomHari,
         jamLembur: r.jamLembur,
         tambahanJamLembur: 0,
-        upahPerJam: DEFAULT_PAYROLL_RATES.upahPerJam,
+        upahPerJam: r.upahPerJam,
         nominalLemburJam: calc.nomJam,
         inap: r.inap,
-        upahPerInap: DEFAULT_PAYROLL_RATES.upahPerInap,
+        upahPerInap: r.upahPerInap,
         nominalLemburInap: calc.nomInap,
-        lemburJenis: r.inap > 0 && r.jamLembur === 0 ? 'Menginap' : 'Jam',
-        lemburVolume: r.inap > 0 && r.jamLembur === 0 ? r.inap : r.jamLembur,
-        lemburTarif:
-          r.inap > 0 && r.jamLembur === 0
-            ? DEFAULT_PAYROLL_RATES.upahPerInap
-            : DEFAULT_PAYROLL_RATES.upahPerJam,
+        lemburJenis,
+        lemburVolume,
+        lemburTarif,
         lemburNominal: calc.totalLembur,
         lemburBreakdown: bp.join(' + ') || '0',
         gapok: calc.gapok,
@@ -206,8 +322,14 @@ export function AttendanceImportModal({
         pph: 0,
         gajiKotor: calc.kotor,
         kasbon: r.kasbon,
+        saldoKasbonAwal: liveSaldo,
+        sisaKasbonSetelah: sisaSetelah,
         bpjs: r.bpjs,
-        keterangan: r.keterangan.trim() || `Import Solution X606-S (${r.hariFingerprint} hari hadir)`,
+        keterangan:
+          r.keterangan.trim() ||
+          (sheet?.detectedMode === 'attendance-log'
+            ? `Import Excel (${r.hariFingerprint} hari hadir)`
+            : 'Import Template Gaji Excel'),
         totalPotongan: calc.pot,
         thp: calc.thp,
         status: 'Draft',
@@ -215,20 +337,54 @@ export function AttendanceImportModal({
         diinputOleh: user ? `${user.nama} (${user.username || user.email || 'admin'})` : 'Admin',
       };
     });
+  };
 
+  const handleSaveSelectedToLocalDrafts = () => {
+    if (!selectedRows.length) {
+      showToast('Centang minimal 1 karyawan terlebih dahulu.', 'warning');
+      return;
+    }
+
+    const payloads = buildPayloads(selectedRows);
+    // Sync each employee's master salary & overtime tariff profile immediately
+    syncEmployeeRatesFromImport(payloads);
     const savedCount = saveLocalDraftsBatch(payloads);
-    onSavedBatchDrafts(savedCount, startISO, endISO);
+    onSavedBatchDrafts(savedCount, startISO, endISO, periodeLabel.trim());
     onClose();
+  };
+
+  const handleImportAndUpdateDirectly = async () => {
+    if (!selectedRows.length || importingDirect) {
+      if (!selectedRows.length) showToast('Centang minimal 1 karyawan terlebih dahulu.', 'warning');
+      return;
+    }
+
+    setImportingDirect(true);
+    try {
+      const payloads = buildPayloads(selectedRows);
+      const summary = await upsertPayrollBatch(payloads);
+      if (onImportedDirect) {
+        onImportedDirect(summary, startISO, endISO, periodeLabel.trim());
+      } else {
+        showToast(
+          `Import selesai: ${summary.updated} diperbarui, ${summary.created} baru disimpan, dan nominal tarif tiap karyawan telah di-update.`,
+          'success',
+        );
+      }
+      onClose();
+    } finally {
+      setImportingDirect(false);
+    }
   };
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-black/55 backdrop-blur-xs no-print"
+      className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/55 backdrop-blur-xs no-print"
       onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
+        if (e.target === e.currentTarget && !importingDirect) onClose();
       }}
     >
-      <div className="w-full max-w-6xl max-h-[92vh] t-card rounded-2xl overflow-hidden shadow-2xl flex flex-col">
+      <div className="w-full max-w-7xl max-h-[94vh] t-card rounded-2xl overflow-hidden shadow-2xl flex flex-col">
         {/* Header */}
         <div className="px-5 py-4 border-b t-border flex items-center justify-between gap-3 shrink-0">
           <div className="flex items-center gap-3 min-w-0">
@@ -243,20 +399,21 @@ export function AttendanceImportModal({
             </div>
             <div className="min-w-0">
               <h3 className="text-sm sm:text-base font-bold t-text truncate">
-                Import Absensi Excel (Solution X606-S)
+                Import Gaji &amp; Absensi Excel (Nominal Gaji &amp; Lembur per Karyawan)
               </h3>
               <p className="text-xs t-muted mt-0.5 truncate">
-                Cocokkan ID fingerprint dengan NIK, isi otomatis Hari Kerja untuk karyawan harian,
-                lalu simpan sebagai Draft Lokal.
+                Mendukung template gaji dengan nominal upah &amp; lemburan berbeda tiap karyawan
+                maupun log absensi Solution X606-S.
               </p>
             </div>
           </div>
 
           <button
             type="button"
+            disabled={importingDirect}
             onClick={onClose}
-            aria-label="Tutup modal import absensi"
-            className="p-2 rounded-xl t-btn-secondary shrink-0"
+            aria-label="Tutup modal import gaji"
+            className="p-2 rounded-xl t-btn-secondary shrink-0 disabled:opacity-50"
           >
             <X className="w-4 h-4" />
           </button>
@@ -264,16 +421,27 @@ export function AttendanceImportModal({
 
         {/* Body */}
         <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-4">
-          {/* Step 1: Upload Bar & Example Template */}
+          {/* Step 1: Upload Bar & Template Download */}
           <div className="rounded-2xl t-subtle border t-border p-4 flex flex-col md:flex-row md:items-center justify-between gap-3">
-            <div className="space-y-1">
+            <div className="space-y-1 min-w-0">
               <div className="text-xs font-bold t-text">
-                1. Unggah File Excel Ekspor Mesin Solution X606-S (.xlsx / .xls / .csv)
+                1. Unduh Template Terbaru atau Unggah File Excel (.xlsx / .xls / .csv)
               </div>
               <p className="text-[11px] t-muted">
-                {sheet
-                  ? `File aktif: ${sheet.fileName} (${sheet.rows.length} baris log · Sheet "${sheet.sheetName}")`
-                  : 'Belum ada file dipilih. Unduh template contoh terlebih dahulu untuk melihat struktur kolom ID, Tanggal, dan Jam Absensi.'}
+                {sheet ? (
+                  <>
+                    File aktif: <b className="t-text">{sheet.fileName}</b> ({sheet.rows.length}{' '}
+                    baris &middot; Sheet <b>&ldquo;{sheet.sheetName}&rdquo;</b> &middot;{' '}
+                    <span className="font-semibold t-link">
+                      {sheet.detectedMode === 'payroll-rekap'
+                        ? 'Mode Rekap Gaji per Karyawan'
+                        : 'Mode Log Absensi Harian'}
+                    </span>
+                    )
+                  </>
+                ) : (
+                  'Template Excel sudah berisi daftar karyawan aktif beserta kolom Nominal Upah Pokok (Rp), Lembur Harian/Jam/Inap & tarifnya masing-masing.'
+                )}
               </p>
             </div>
 
@@ -284,7 +452,7 @@ export function AttendanceImportModal({
                 className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl t-btn-secondary text-xs font-semibold whitespace-nowrap"
               >
                 <Download className="w-3.5 h-3.5" />
-                <span>Unduh Template Contoh</span>
+                <span>Unduh Template Gaji</span>
               </button>
 
               <input
@@ -296,12 +464,14 @@ export function AttendanceImportModal({
               />
               <button
                 type="button"
-                disabled={loadingFile}
+                disabled={loadingFile || importingDirect}
                 onClick={() => fileInputRef.current?.click()}
                 className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl t-btn-primary text-xs whitespace-nowrap disabled:opacity-60"
               >
                 <Upload className="w-3.5 h-3.5" />
-                <span>{loadingFile ? 'Membaca file...' : sheet ? 'Ganti File Excel' : 'Pilih File Excel'}</span>
+                <span>
+                  {loadingFile ? 'Membaca file...' : sheet ? 'Ganti File Excel' : 'Pilih File Excel'}
+                </span>
               </button>
             </div>
           </div>
@@ -313,21 +483,52 @@ export function AttendanceImportModal({
             </div>
           )}
 
-          {/* Step 2: Period Filter & Column Mapping */}
+          {/* Step 2: Sheet Switcher, Period & Column Mapping */}
           {sheet && (
             <div className="t-card rounded-2xl p-4 border t-border space-y-3">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="flex flex-wrap items-center gap-3 text-xs">
+                  {sheet.availableSheets.length > 1 && (
+                    <div className="flex items-center gap-1.5">
+                      <label className="font-bold t-text">Sheet:</label>
+                      <select
+                        value={sheet.sheetName}
+                        onChange={(e) => handleSwitchSheet(e.target.value)}
+                        className="t-input rounded-lg px-2.5 py-1 text-xs font-semibold"
+                      >
+                        {sheet.availableSheets.map((sn) => (
+                          <option key={sn} value={sn}>
+                            {sn}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+
                   <span className="inline-flex items-center gap-1.5 font-bold t-text">
                     <Calendar className="w-3.5 h-3.5 t-link" />
-                    <span>2. Periode Absensi:</span>
+                    <span>2. Periode Gaji:</span>
                   </span>
+
+                  <input
+                    type="text"
+                    value={periodeLabel}
+                    onChange={(e) => setPeriodeLabel(e.target.value)}
+                    placeholder="Contoh: 31 Okt - 06 Nov 2026"
+                    className="t-input rounded-lg px-2.5 py-1 text-xs font-semibold w-44"
+                  />
+
                   <div className="flex items-center gap-1.5">
                     <label className="t-muted">Dari</label>
                     <input
                       type="date"
                       value={startISO}
-                      onChange={(e) => setStartISO(e.target.value)}
+                      onChange={(e) => {
+                        setStartISO(e.target.value);
+                        if (e.target.value && endISO) {
+                          setPeriodeLabel(formatDateRangeLabel(e.target.value, endISO));
+                        }
+                      }}
                       className="t-input rounded-lg px-2 py-1 text-xs font-mono-num"
                     />
                   </div>
@@ -336,11 +537,15 @@ export function AttendanceImportModal({
                     <input
                       type="date"
                       value={endISO}
-                      onChange={(e) => setEndISO(e.target.value)}
+                      onChange={(e) => {
+                        setEndISO(e.target.value);
+                        if (startISO && e.target.value) {
+                          setPeriodeLabel(formatDateRangeLabel(startISO, e.target.value));
+                        }
+                      }}
                       className="t-input rounded-lg px-2 py-1 text-xs font-mono-num"
                     />
                   </div>
-                  <span className="text-[11px] font-semibold t-link">{periodeLabel}</span>
                 </div>
 
                 <button
@@ -354,14 +559,30 @@ export function AttendanceImportModal({
               </div>
 
               {showMapping && (
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-2.5 pt-3 border-t t-border">
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2.5 pt-3 border-t t-border">
                   {(
                     [
-                      { key: 'idCol', label: 'Kolom ID Finger *' },
-                      { key: 'namaCol', label: 'Kolom Nama' },
-                      { key: 'tanggalCol', label: 'Kolom Tanggal *' },
-                      { key: 'jamMasukCol', label: 'Jam Masuk / Scan 1' },
-                      { key: 'jamPulangCol', label: 'Jam Pulang / Scan 2' },
+                      { key: 'idCol', label: 'NIK / ID Finger' },
+                      { key: 'namaCol', label: 'Nama Karyawan' },
+                      { key: 'divisiCol', label: 'Divisi' },
+                      { key: 'siklusCol', label: 'Siklus Gaji' },
+                      { key: 'satuanCol', label: 'Satuan (HR/Trip)' },
+                      { key: 'tanggalCol', label: 'Tanggal (Log Harian)' },
+                      { key: 'jamMasukCol', label: 'Jam Masuk' },
+                      { key: 'jamPulangCol', label: 'Jam Pulang' },
+                      { key: 'hariKerjaCol', label: 'Hari Kerja (HR)' },
+                      { key: 'tripCol', label: 'Jumlah Trip' },
+                      { key: 'upahPokokCol', label: 'Nominal Upah Pokok' },
+                      { key: 'upahHariCol', label: 'Upah/Hari (Khusus)' },
+                      { key: 'upahTripCol', label: 'Upah/Trip (Khusus)' },
+                      { key: 'lemburHariCol', label: 'Lembur Harian (HR)' },
+                      { key: 'upahLemburHariCol', label: 'Upah Lembur Harian' },
+                      { key: 'lemburJamCol', label: 'Lembur Jam (Jam)' },
+                      { key: 'upahLemburJamCol', label: 'Upah Lembur Jam' },
+                      { key: 'inapCol', label: 'Lembur Inap' },
+                      { key: 'upahInapCol', label: 'Upah Lembur Inap' },
+                      { key: 'kasbonCol', label: 'Potongan Kasbon' },
+                      { key: 'bpjsCol', label: 'Iuran BPJS' },
                       { key: 'ketCol', label: 'Keterangan' },
                     ] as const
                   ).map((field) => (
@@ -372,7 +593,7 @@ export function AttendanceImportModal({
                         onChange={(e) =>
                           setMapping((prev) => ({ ...prev, [field.key]: e.target.value }))
                         }
-                        className="w-full text-xs px-2.5 py-1.5 rounded-lg t-input font-semibold"
+                        className="w-full text-xs px-2 py-1.5 rounded-lg t-input font-semibold"
                       >
                         <option value="">-- Tidak dipakai --</option>
                         {sheet.headers.map((h) => (
@@ -388,35 +609,31 @@ export function AttendanceImportModal({
             </div>
           )}
 
-          {/* Step 3: Preview Matched Attendance Table */}
+          {/* Step 3: Preview Table with Editable Per-Employee Nominal Salary & Overtime */}
           {sheet && (
             <div className="t-card rounded-2xl border t-border overflow-hidden">
               <div className="px-4 py-3 border-b t-border flex flex-wrap items-center justify-between gap-2 text-xs">
                 <div className="flex flex-wrap items-center gap-3">
                   <span className="t-section-label">
-                    3. Hasil Pencocokan ID Fingerprint &rarr; NIK ({rows.length} karyawan)
+                    3. Preview Nominal Gaji &amp; Lemburan per Karyawan ({rows.length} karyawan)
                   </span>
                   <span
                     className="inline-flex items-center gap-1 text-[11px] font-bold"
                     style={{ color: 'var(--status-ok-text)' }}
                   >
                     <CheckCircle2 className="w-3.5 h-3.5" />
-                    <span>{matchedCount} cocok NIK</span>
+                    <span>{matchedCount} terdaftar</span>
                   </span>
-                  {unmatchedCount > 0 && (
-                    <span
-                      className="inline-flex items-center gap-1 text-[11px] font-bold"
-                      style={{ color: 'var(--status-warn-text)' }}
-                    >
-                      <AlertCircle className="w-3.5 h-3.5" />
-                      <span>{unmatchedCount} belum di master</span>
+                  {rateExcelCount > 0 && (
+                    <span className="inline-flex items-center gap-1 text-[11px] font-bold t-link">
+                      <span>{rateExcelCount} nominal dari Excel</span>
                     </span>
                   )}
                 </div>
 
                 <span className="text-[11px] t-muted">
-                  Trip, Inap, Lembur &amp; Kasbon bisa diisi langsung di tabel atau lewat tombol
-                  Muat ke Form.
+                  Nominal Upah &amp; Tarif Lembur tiap karyawan langsung terbaca &amp; bisa diubah
+                  langsung di tabel sebelum disimpan.
                 </span>
               </div>
 
@@ -424,7 +641,7 @@ export function AttendanceImportModal({
                 <table className="w-full text-left text-xs">
                   <thead>
                     <tr className="t-subtle border-b t-border">
-                      <th className="py-2.5 px-3 w-9 text-center">
+                      <th className="py-2.5 px-2.5 w-8 text-center">
                         <input
                           type="checkbox"
                           checked={rows.length > 0 && selectedRows.length === rows.length}
@@ -433,31 +650,31 @@ export function AttendanceImportModal({
                           className="w-3.5 h-3.5 rounded accent-[var(--accent-brand)] cursor-pointer"
                         />
                       </th>
-                      <th className="py-2.5 px-3 t-th-label">ID &rarr; Karyawan</th>
-                      <th className="py-2.5 px-2 t-th-label">Skema</th>
-                      <th className="py-2.5 px-2 t-th-label text-center">Hadir Finger</th>
-                      <th className="py-2.5 px-2 t-th-label text-right">HR / Trip</th>
-                      <th className="py-2.5 px-2 t-th-label text-right">Lembur (Jam)</th>
-                      <th className="py-2.5 px-2 t-th-label text-right">Inap</th>
-                      <th className="py-2.5 px-2 t-th-label text-right">Kasbon (Rp)</th>
-                      <th className="py-2.5 px-3 t-th-label text-right">Est. THP</th>
-                      <th className="py-2.5 px-3 t-th-label text-right">Aksi</th>
+                      <th className="py-2.5 px-2.5 t-th-label">Karyawan &amp; Divisi</th>
+                      <th className="py-2.5 px-2 t-th-label">Pokok (Qty &times; Nominal Rp)</th>
+                      <th className="py-2.5 px-2 t-th-label">Lembur Harian</th>
+                      <th className="py-2.5 px-2 t-th-label">Lembur Jam</th>
+                      <th className="py-2.5 px-2 t-th-label">Lembur Inap</th>
+                      <th className="py-2.5 px-2 t-th-label">Kasbon &amp; BPJS</th>
+                      <th className="py-2.5 px-2.5 t-th-label text-right">Est. Gaji Bersih</th>
+                      <th className="py-2.5 px-2.5 t-th-label text-right">Aksi</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y t-border">
                     {rows.length === 0 ? (
                       <tr>
-                        <td colSpan={10} className="p-6 text-center t-muted">
-                          Tidak ada data absensi dalam rentang periode ini. Cek tanggal periode atau
-                          pengaturan pemetaan kolom di atas.
+                        <td colSpan={9} className="p-6 text-center t-muted">
+                          Tidak ada data yang cocok. Cek pemetaan kolom atau rentang tanggal di
+                          atas.
                         </td>
                       </tr>
                     ) : (
                       rows.map((r, idx) => {
                         const calc = calcRowThp(r);
+                        const willUpdateExisting = isExistingInPeriod(r);
                         return (
-                          <tr key={`${r.fingerId}-${idx}`} className="t-row-hover">
-                            <td className="py-2.5 px-3 text-center">
+                          <tr key={`${r.fingerId}-${idx}`} className="t-row-hover align-top">
+                            <td className="py-2.5 px-2.5 text-center pt-3">
                               <input
                                 type="checkbox"
                                 checked={r.selected}
@@ -466,109 +683,311 @@ export function AttendanceImportModal({
                                 className="w-3.5 h-3.5 rounded accent-[var(--accent-brand)] cursor-pointer"
                               />
                             </td>
-                            <td className="py-2.5 px-3">
-                              <div className="font-bold t-text">{r.nama}</div>
-                              <div className="text-[10px] font-mono-num t-muted">
-                                ID {r.fingerId} &rarr; NIK {r.nik}{' '}
-                                {!r.matched && (
-                                  <span style={{ color: 'var(--status-warn-text)' }}>
-                                    (Belum di master)
+
+                            {/* Karyawan, Divisi & Siklus */}
+                            <td className="py-2.5 px-2.5 min-w-[175px]">
+                              <div className="font-bold t-text leading-tight">{r.nama}</div>
+                              <div className="text-[10px] font-mono-num t-muted mt-0.5 flex flex-wrap items-center gap-1.5">
+                                <span>NIK {r.nik}</span>
+                                {willUpdateExisting ? (
+                                  <span
+                                    className="font-bold"
+                                    style={{ color: 'var(--status-info-text)' }}
+                                  >
+                                    &bull; Update Periode Ini
                                   </span>
-                                )}
+                                ) : !r.matched ? (
+                                  <span
+                                    className="font-bold"
+                                    style={{ color: 'var(--status-warn-text)' }}
+                                  >
+                                    &bull; Karyawan Baru
+                                  </span>
+                                ) : null}
+                              </div>
+                              <div className="mt-1.5 flex items-center gap-1">
+                                <select
+                                  value={r.divisi}
+                                  onChange={(e) => {
+                                    const nextDiv = e.target.value as DivisionName;
+                                    const nextIsTrip =
+                                      nextDiv === 'Supir B3'
+                                        ? true
+                                        : nextDiv === 'Karyawan limbah'
+                                          ? false
+                                          : r.isTrip;
+                                    updateRow(idx, { divisi: nextDiv, isTrip: nextIsTrip });
+                                  }}
+                                  className="text-[10px] px-1.5 py-1 rounded-md t-input font-semibold"
+                                >
+                                  {DIVISIONS.map((d) => (
+                                    <option key={d} value={d}>
+                                      {d}
+                                    </option>
+                                  ))}
+                                </select>
+                                <select
+                                  value={r.siklusGaji}
+                                  onChange={(e) =>
+                                    updateRow(idx, { siklusGaji: e.target.value as PayrollCycle })
+                                  }
+                                  className="text-[10px] px-1.5 py-1 rounded-md t-input font-semibold"
+                                >
+                                  {PAYROLL_CYCLES.map((c) => (
+                                    <option key={c} value={c}>
+                                      {c}
+                                    </option>
+                                  ))}
+                                </select>
                               </div>
                             </td>
-                            <td className="py-2.5 px-2 whitespace-nowrap">
-                              <div className="font-semibold t-text">{r.divisi}</div>
-                              <div className="text-[10px] t-muted">
-                                {r.isTrip ? 'Gaji per Trip' : 'Gaji Harian (Auto HR)'}
+
+                            {/* Gaji Pokok: Qty x Nominal Upah Pokok */}
+                            <td className="py-2.5 px-2 min-w-[155px]">
+                              <div className="flex items-center gap-1">
+                                <input
+                                  type="number"
+                                  min={0}
+                                  step={r.isTrip ? 1 : 0.5}
+                                  value={r.isTrip ? r.tripInput : r.hariKerjaInput}
+                                  onChange={(e) =>
+                                    updateRow(
+                                      idx,
+                                      r.isTrip
+                                        ? { tripInput: parseFloat(e.target.value) || 0 }
+                                        : { hariKerjaInput: parseFloat(e.target.value) || 0 },
+                                    )
+                                  }
+                                  aria-label={r.isTrip ? 'Jumlah Trip' : 'Hari Kerja'}
+                                  className="w-14 text-right px-1.5 py-1 rounded-lg t-input font-mono-num font-bold text-[11px]"
+                                />
+                                <span className="text-[10px] t-muted font-semibold">
+                                  {r.isTrip ? 'Trip' : 'HR'} &times;
+                                </span>
+                              </div>
+                              <div className="mt-1 flex items-center gap-1">
+                                <span className="text-[10px] t-muted">Rp</span>
+                                <input
+                                  type="text"
+                                  value={formatNumberWithDots(
+                                    r.isTrip ? r.upahPerTrip : r.upahPerHari,
+                                  )}
+                                  onChange={(e) => {
+                                    const val = cleanRupiahToNumber(
+                                      formatCurrencyInput(e.target.value),
+                                    );
+                                    updateRow(
+                                      idx,
+                                      r.isTrip ? { upahPerTrip: val } : { upahPerHari: val },
+                                    );
+                                  }}
+                                  aria-label="Nominal Upah Pokok"
+                                  className="w-24 text-right px-1.5 py-1 rounded-lg t-input font-mono-num font-bold text-[11px]"
+                                />
+                              </div>
+                              <div className="text-[10px] font-mono-num t-muted mt-0.5">
+                                = {formatRupiah(calc.gapok)}
                               </div>
                             </td>
-                            <td className="py-2.5 px-2 text-center font-mono-num font-bold t-link">
-                              {r.hariFingerprint} hari
-                            </td>
-                            <td className="py-2.5 px-2 text-right">
-                              {r.isTrip ? (
-                                <div className="inline-flex items-center gap-1">
-                                  <input
-                                    type="number"
-                                    min={0}
-                                    step={1}
-                                    value={r.tripInput}
-                                    onChange={(e) =>
-                                      updateRow(idx, { tripInput: parseFloat(e.target.value) || 0 })
-                                    }
-                                    className="w-16 text-right px-2 py-1 rounded-lg t-input font-mono-num font-bold"
-                                  />
-                                  <span className="text-[10px] t-muted">Trip</span>
-                                </div>
-                              ) : (
-                                <div className="inline-flex items-center gap-1">
-                                  <input
-                                    type="number"
-                                    min={0}
-                                    step={0.5}
-                                    value={r.hariKerjaInput}
-                                    onChange={(e) =>
-                                      updateRow(idx, {
-                                        hariKerjaInput: parseFloat(e.target.value) || 0,
-                                      })
-                                    }
-                                    className="w-16 text-right px-2 py-1 rounded-lg t-input font-mono-num font-bold"
-                                  />
-                                  <span className="text-[10px] t-muted">HR</span>
+
+                            {/* Lembur Harian (Qty & Nominal) */}
+                            <td className="py-2.5 px-2 min-w-[125px]">
+                              <div className="flex items-center gap-1">
+                                <input
+                                  type="number"
+                                  min={0}
+                                  step={0.5}
+                                  value={r.lemburHari}
+                                  onChange={(e) =>
+                                    updateRow(idx, { lemburHari: parseFloat(e.target.value) || 0 })
+                                  }
+                                  aria-label="Jumlah Lembur Harian"
+                                  className="w-14 text-right px-1.5 py-1 rounded-lg t-input font-mono-num text-[11px]"
+                                />
+                                <span className="text-[10px] t-muted">HR</span>
+                              </div>
+                              <div className="mt-1 flex items-center gap-1">
+                                <span className="text-[10px] t-muted">@</span>
+                                <input
+                                  type="text"
+                                  value={formatNumberWithDots(r.upahLemburHari)}
+                                  onChange={(e) =>
+                                    updateRow(idx, {
+                                      upahLemburHari: cleanRupiahToNumber(
+                                        formatCurrencyInput(e.target.value),
+                                      ),
+                                    })
+                                  }
+                                  aria-label="Upah Lembur Harian"
+                                  className="w-20 text-right px-1.5 py-1 rounded-lg t-input font-mono-num text-[11px]"
+                                />
+                              </div>
+                              {calc.nomHari > 0 && (
+                                <div
+                                  className="text-[10px] font-mono-num font-semibold mt-0.5"
+                                  style={{ color: 'var(--status-ok-text)' }}
+                                >
+                                  +{formatNumberWithDots(calc.nomHari)}
                                 </div>
                               )}
                             </td>
-                            <td className="py-2.5 px-2 text-right">
-                              <input
-                                type="number"
-                                min={0}
-                                step={0.5}
-                                value={r.jamLembur}
-                                onChange={(e) =>
-                                  updateRow(idx, { jamLembur: parseFloat(e.target.value) || 0 })
-                                }
-                                className="w-16 text-right px-2 py-1 rounded-lg t-input font-mono-num"
-                              />
+
+                            {/* Lembur Jam (Qty & Nominal) */}
+                            <td className="py-2.5 px-2 min-w-[125px]">
+                              <div className="flex items-center gap-1">
+                                <input
+                                  type="number"
+                                  min={0}
+                                  step={0.5}
+                                  value={r.jamLembur}
+                                  onChange={(e) =>
+                                    updateRow(idx, { jamLembur: parseFloat(e.target.value) || 0 })
+                                  }
+                                  aria-label="Jumlah Lembur Jam"
+                                  className="w-14 text-right px-1.5 py-1 rounded-lg t-input font-mono-num text-[11px]"
+                                />
+                                <span className="text-[10px] t-muted">Jam</span>
+                              </div>
+                              <div className="mt-1 flex items-center gap-1">
+                                <span className="text-[10px] t-muted">@</span>
+                                <input
+                                  type="text"
+                                  value={formatNumberWithDots(r.upahPerJam)}
+                                  onChange={(e) =>
+                                    updateRow(idx, {
+                                      upahPerJam: cleanRupiahToNumber(
+                                        formatCurrencyInput(e.target.value),
+                                      ),
+                                    })
+                                  }
+                                  aria-label="Upah Lembur Jam"
+                                  className="w-20 text-right px-1.5 py-1 rounded-lg t-input font-mono-num text-[11px]"
+                                />
+                              </div>
+                              {calc.nomJam > 0 && (
+                                <div
+                                  className="text-[10px] font-mono-num font-semibold mt-0.5"
+                                  style={{ color: 'var(--status-ok-text)' }}
+                                >
+                                  +{formatNumberWithDots(calc.nomJam)}
+                                </div>
+                              )}
                             </td>
-                            <td className="py-2.5 px-2 text-right">
-                              <input
-                                type="number"
-                                min={0}
-                                step={1}
-                                value={r.inap}
-                                onChange={(e) =>
-                                  updateRow(idx, { inap: parseFloat(e.target.value) || 0 })
-                                }
-                                className="w-14 text-right px-2 py-1 rounded-lg t-input font-mono-num"
-                              />
+
+                            {/* Lembur Inap (Qty & Nominal) */}
+                            <td className="py-2.5 px-2 min-w-[125px]">
+                              <div className="flex items-center gap-1">
+                                <input
+                                  type="number"
+                                  min={0}
+                                  step={1}
+                                  value={r.inap}
+                                  onChange={(e) =>
+                                    updateRow(idx, { inap: parseFloat(e.target.value) || 0 })
+                                  }
+                                  aria-label="Jumlah Inap"
+                                  className="w-14 text-right px-1.5 py-1 rounded-lg t-input font-mono-num text-[11px]"
+                                />
+                                <span className="text-[10px] t-muted">Inap</span>
+                              </div>
+                              <div className="mt-1 flex items-center gap-1">
+                                <span className="text-[10px] t-muted">@</span>
+                                <input
+                                  type="text"
+                                  value={formatNumberWithDots(r.upahPerInap)}
+                                  onChange={(e) =>
+                                    updateRow(idx, {
+                                      upahPerInap: cleanRupiahToNumber(
+                                        formatCurrencyInput(e.target.value),
+                                      ),
+                                    })
+                                  }
+                                  aria-label="Upah Lembur Inap"
+                                  className="w-20 text-right px-1.5 py-1 rounded-lg t-input font-mono-num text-[11px]"
+                                />
+                              </div>
+                              {calc.nomInap > 0 && (
+                                <div
+                                  className="text-[10px] font-mono-num font-semibold mt-0.5"
+                                  style={{ color: 'var(--status-ok-text)' }}
+                                >
+                                  +{formatNumberWithDots(calc.nomInap)}
+                                </div>
+                              )}
                             </td>
-                            <td className="py-2.5 px-2 text-right">
-                              <input
-                                type="text"
-                                value={r.kasbon > 0 ? formatNumberWithDots(r.kasbon) : ''}
-                                placeholder="0"
-                                onChange={(e) =>
-                                  updateRow(idx, {
-                                    kasbon: cleanRupiahToNumber(formatCurrencyInput(e.target.value)),
-                                  })
-                                }
-                                className="w-24 text-right px-2 py-1 rounded-lg t-input font-mono-num"
-                              />
+
+                            {/* Kasbon & BPJS */}
+                            <td className="py-2.5 px-2 min-w-[125px]">
+                              <div className="flex items-center gap-1">
+                                <span className="text-[10px] t-muted w-9">Kbn</span>
+                                <input
+                                  type="text"
+                                  value={r.kasbon > 0 ? formatNumberWithDots(r.kasbon) : ''}
+                                  placeholder="0"
+                                  onChange={(e) =>
+                                    updateRow(idx, {
+                                      kasbon: cleanRupiahToNumber(
+                                        formatCurrencyInput(e.target.value),
+                                      ),
+                                    })
+                                  }
+                                  aria-label="Potongan Kasbon"
+                                  className="w-20 text-right px-1.5 py-1 rounded-lg t-input font-mono-num text-[11px]"
+                                />
+                              </div>
+                              <div className="mt-1 flex items-center gap-1">
+                                <span className="text-[10px] t-muted w-9">BPJS</span>
+                                <input
+                                  type="text"
+                                  value={r.bpjs > 0 ? formatNumberWithDots(r.bpjs) : ''}
+                                  placeholder="0"
+                                  onChange={(e) =>
+                                    updateRow(idx, {
+                                      bpjs: cleanRupiahToNumber(
+                                        formatCurrencyInput(e.target.value),
+                                      ),
+                                    })
+                                  }
+                                  aria-label="Iuran BPJS"
+                                  className="w-20 text-right px-1.5 py-1 rounded-lg t-input font-mono-num text-[11px]"
+                                />
+                              </div>
                             </td>
-                            <td className="py-2.5 px-3 text-right font-mono-num font-bold t-text whitespace-nowrap">
-                              {formatRupiah(calc.thp)}
+
+                            {/* Est. THP */}
+                            <td className="py-2.5 px-2.5 text-right whitespace-nowrap">
+                              <div className="font-mono-num font-bold t-text text-xs">
+                                {formatRupiah(calc.thp)}
+                              </div>
+                              {calc.totalLembur > 0 && (
+                                <div
+                                  className="text-[10px] font-mono-num mt-0.5"
+                                  style={{ color: 'var(--status-ok-text)' }}
+                                >
+                                  Lmbr {formatNumberWithDots(calc.totalLembur)}
+                                </div>
+                              )}
+                              {calc.pot > 0 && (
+                                <div
+                                  className="text-[10px] font-mono-num"
+                                  style={{ color: 'var(--status-bad-text)' }}
+                                >
+                                  Pot -{formatNumberWithDots(calc.pot)}
+                                </div>
+                              )}
                             </td>
-                            <td className="py-2.5 px-3 text-right whitespace-nowrap">
+
+                            {/* Aksi */}
+                            <td className="py-2.5 px-2.5 text-right whitespace-nowrap pt-3">
                               <button
                                 type="button"
                                 onClick={() => {
-                                  onApplyToForm(r, startISO, endISO);
+                                  onApplyToForm(r, startISO, endISO, periodeLabel.trim());
                                   onClose();
                                 }}
                                 className="inline-flex items-center gap-1 t-link font-bold hover:underline"
                               >
-                                <span>Muat ke Form</span>
+                                <span>Ke Form</span>
                                 <ArrowRight className="w-3 h-3" />
                               </button>
                             </td>
@@ -589,30 +1008,45 @@ export function AttendanceImportModal({
             {rows.length > 0 ? (
               <>
                 <b className="t-text font-mono-num">{selectedRows.length}</b> dari{' '}
-                <b className="t-text font-mono-num">{rows.length}</b> karyawan dipilih untuk
-                disimpan ke Draft Lokal.
+                <b className="t-text font-mono-num">{rows.length}</b> karyawan dipilih &bull; Total
+                Gaji Bersih:{' '}
+                <b className="t-text font-mono-num">{formatRupiah(totalSelectedThp)}</b>
               </>
             ) : (
-              'Unggah file Excel Solution X606-S untuk mulai memproses absensi.'
+              'Unduh Template Gaji terlebih dahulu atau unggah file Excel Anda.'
             )}
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
+              disabled={importingDirect}
               onClick={onClose}
-              className="px-4 py-2 rounded-xl t-btn-secondary text-xs font-semibold whitespace-nowrap"
+              className="px-3.5 py-2 rounded-xl t-btn-secondary text-xs font-semibold whitespace-nowrap disabled:opacity-50"
             >
               Tutup
             </button>
             <button
               type="button"
-              disabled={selectedRows.length === 0}
+              disabled={selectedRows.length === 0 || importingDirect}
               onClick={handleSaveSelectedToLocalDrafts}
-              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl t-btn-primary text-xs whitespace-nowrap disabled:opacity-50"
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl t-btn-secondary text-xs font-semibold whitespace-nowrap disabled:opacity-50"
             >
               <HardDrive className="w-3.5 h-3.5" />
-              <span>Simpan ke Draft Lokal ({selectedRows.length})</span>
+              <span>Simpan ke Draft ({selectedRows.length})</span>
+            </button>
+            <button
+              type="button"
+              disabled={selectedRows.length === 0 || importingDirect}
+              onClick={handleImportAndUpdateDirectly}
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl t-btn-primary text-xs whitespace-nowrap disabled:opacity-50"
+            >
+              <CloudUpload className="w-3.5 h-3.5" />
+              <span>
+                {importingDirect
+                  ? 'Memperbarui Gaji...'
+                  : `Import & Update Langsung (${selectedRows.length})`}
+              </span>
             </button>
           </div>
         </div>

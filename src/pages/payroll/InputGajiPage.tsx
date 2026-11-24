@@ -277,16 +277,21 @@ export function InputGajiPage() {
     row: AttendancePreviewRow,
     startISO: string,
     endISO: string,
+    importedPeriodeLabel: string,
   ) => {
     setEditingDraftId(null);
+    setEditingPayrollRecord(null);
     if (startISO) setRangeStart(startISO);
     if (endISO) setRangeEnd(endISO);
-    if (startISO && endISO) {
+    if (importedPeriodeLabel) {
+      setPeriodeTanggal(importedPeriodeLabel);
+    } else if (startISO && endISO) {
       setPeriodeTanggal(formatDateRangeLabel(startISO, endISO));
     }
     setNama(row.nama);
     setNik(row.nik);
     setDivisi(row.divisi);
+    setSiklusGaji(row.siklusGaji || 'Mingguan');
     if (row.divisi === 'Supir SPD') {
       setSupirSpdUnit(row.isTrip ? 'trip' : 'hari');
     }
@@ -297,26 +302,37 @@ export function InputGajiPage() {
       setHr(String(row.hariKerjaInput));
       setUpahHari(formatNumberWithDots(row.upahPerHari));
     }
+    const hasHari = row.lemburHari > 0;
+    const hasJam = row.jamLembur > 0;
+    const hasInap = row.inap > 0;
     setActiveLembur({
-      hari: false,
-      jam: row.jamLembur > 0 || !row.isTrip,
-      inap: row.inap > 0 || row.isTrip,
+      hari: hasHari,
+      jam: hasJam || (!hasHari && !hasInap && !row.isTrip),
+      inap: hasInap || (!hasHari && !hasJam && row.isTrip),
     });
-    setLemburHari('0');
+    setLemburHari(String(row.lemburHari || 0));
+    setUpahLemburHari(formatNumberWithDots(row.upahLemburHari));
     setLemburJam(String(row.jamLembur || 0));
     setLemburTambahan('0');
+    setUpahJam(formatNumberWithDots(row.upahPerJam));
     setInap(String(row.inap || 0));
+    setUpahInap(formatNumberWithDots(row.upahPerInap));
     setKasbon(formatNumberWithDots(row.kasbon || 0));
     setBpjs(formatNumberWithDots(row.bpjs || 0));
+    setSaldoKasbon(formatNumberWithDots(getEmployeeKasbonSaldo(row.nik, row.nama)));
     setKeterangan(
       row.keterangan ||
         (row.isTrip
-          ? `Absensi Solution: ${row.hariFingerprint} hari hadir (isi Trip/Inap manual)`
-          : `Import Solution X606-S (${row.hariFingerprint} hari hadir)`),
+          ? `Import Excel: ${row.tripInput} Trip`
+          : `Import Excel (${row.hariKerjaInput} HR)`),
     );
     setStatus('Draft');
     showToast(
-      `Data absensi ${row.nama} dimuat ke form (${row.isTrip ? `${row.hariFingerprint} hari info` : `${row.hariKerjaInput} HR`}).`,
+      `Data gaji & nominal ${row.nama} dimuat ke form (${
+        row.isTrip
+          ? `${row.tripInput} Trip × ${formatRupiah(row.upahPerTrip)}`
+          : `${row.hariKerjaInput} HR × ${formatRupiah(row.upahPerHari)}`
+      }).`,
       'info',
     );
   };
@@ -622,7 +638,7 @@ export function InputGajiPage() {
               className="inline-flex items-center gap-1.5 px-3.5 py-2 t-btn-primary rounded-xl text-xs whitespace-nowrap"
             >
               <FileSpreadsheet className="w-3.5 h-3.5" />
-              <span>Import Absensi Excel</span>
+              <span>Import Gaji / Absensi</span>
             </button>
             <button
               type="button"
@@ -1498,22 +1514,38 @@ export function InputGajiPage() {
         </div>
       </div>
 
-      {/* Modal Import Absensi Solution X606-S */}
+      {/* Modal Import Gaji & Absensi Excel */}
       <AttendanceImportModal
         open={showImportModal}
         onClose={() => setShowImportModal(false)}
         initialStartISO={rangeStart}
         initialEndISO={rangeEnd}
+        initialPeriodeLabel={periodeTanggal}
         onApplyToForm={applyImportedAttendanceRow}
-        onSavedBatchDrafts={(count, sISO, eISO) => {
+        onSavedBatchDrafts={(count, sISO, eISO, pLabel) => {
           if (sISO) setRangeStart(sISO);
           if (eISO) setRangeEnd(eISO);
-          if (sISO && eISO) setPeriodeTanggal(formatDateRangeLabel(sISO, eISO));
+          if (pLabel) setPeriodeTanggal(pLabel);
+          else if (sISO && eISO) setPeriodeTanggal(formatDateRangeLabel(sISO, eISO));
           showToast(
-            `${count} karyawan dari absensi Solution X606-S berhasil masuk ke tabel Draft Gaji Lokal di bawah.`,
+            `${count} karyawan berhasil masuk ke Draft Gaji Lokal & tarif masing-masing karyawan telah diperbarui.`,
             'success',
           );
           scrollToDrafts(true);
+        }}
+        onImportedDirect={(summary, sISO, eISO, pLabel) => {
+          if (sISO) setRangeStart(sISO);
+          if (eISO) setRangeEnd(eISO);
+          if (pLabel) setPeriodeTanggal(pLabel);
+          else if (sISO && eISO) setPeriodeTanggal(formatDateRangeLabel(sISO, eISO));
+          const parts: string[] = [];
+          if (summary.updated > 0) parts.push(`${summary.updated} data diperbarui`);
+          if (summary.created > 0) parts.push(`${summary.created} data baru disimpan`);
+          if (summary.failed > 0) parts.push(`${summary.failed} gagal`);
+          showToast(
+            `Import gaji selesai (${parts.join(', ')}). Nominal upah & lembur tiap karyawan sudah ter-update otomatis.`,
+            summary.failed > 0 ? 'warning' : 'success',
+          );
         }}
       />
     </section>

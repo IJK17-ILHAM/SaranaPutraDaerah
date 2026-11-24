@@ -119,6 +119,9 @@ export interface EmployeeProfile {
   siklusGaji: PayrollCycle;
   satuanPokok?: 'trip' | 'hari';
   upahDefault?: number;
+  upahLemburHariDefault?: number;
+  upahPerJamDefault?: number;
+  upahPerInapDefault?: number;
   kasbonSaldo: number;
   kasbonHistory: EmployeeKasbonEntry[];
   catatan?: string;

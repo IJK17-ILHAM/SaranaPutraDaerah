@@ -39,6 +39,9 @@ export interface EmployeeProfileInput {
   siklusGaji: PayrollCycle;
   satuanPokok?: 'trip' | 'hari';
   upahDefault?: number;
+  upahLemburHariDefault?: number;
+  upahPerJamDefault?: number;
+  upahPerInapDefault?: number;
   kasbonSaldo: number;
   catatan?: string;
 }
@@ -77,6 +80,10 @@ interface PayrollContextValue {
   localDrafts: PayrollRecord[];
   saveLocalDraft: (payload: PayrollRecord) => PayrollRecord;
   saveLocalDraftsBatch: (payloads: PayrollRecord[]) => number;
+  syncEmployeeRatesFromImport: (payloads: PayrollRecord[]) => void;
+  upsertPayrollBatch: (
+    payloads: PayrollRecord[],
+  ) => Promise<{ updated: number; created: number; failed: number }>;
   deleteLocalDraft: (localDraftId: string) => void;
   promoteDraftToSPS: (localDraftId: string) => Promise<boolean>;
   accounts: AccountRecord[];
@@ -258,6 +265,9 @@ export function PayrollProvider({ children }: { children: React.ReactNode }) {
           upahDefault:
             c.tarifPokok ||
             (c.isTrip ? DEFAULT_PAYROLL_RATES.upahPerTrip : DEFAULT_PAYROLL_RATES.upahPerHari),
+          upahLemburHariDefault: c.upahLemburHari || DEFAULT_PAYROLL_RATES.upahLemburHari,
+          upahPerJamDefault: c.upahPerJam || DEFAULT_PAYROLL_RATES.upahPerJam,
+          upahPerInapDefault: c.upahPerInap || DEFAULT_PAYROLL_RATES.upahPerInap,
           kasbonSaldo: 0,
           kasbonHistory: [],
           catatan: '',
@@ -349,7 +359,10 @@ export function PayrollProvider({ children }: { children: React.ReactNode }) {
             divisi: input.divisi,
             siklusGaji: input.siklusGaji,
             satuanPokok: input.satuanPokok,
-            upahDefault: input.upahDefault,
+            upahDefault: input.upahDefault ?? old.upahDefault,
+            upahLemburHariDefault: input.upahLemburHariDefault ?? old.upahLemburHariDefault,
+            upahPerJamDefault: input.upahPerJamDefault ?? old.upahPerJamDefault,
+            upahPerInapDefault: input.upahPerInapDefault ?? old.upahPerInapDefault,
             kasbonSaldo: cleanSaldo,
             kasbonHistory: history,
             catatan: (input.catatan || '').trim(),
@@ -380,6 +393,9 @@ export function PayrollProvider({ children }: { children: React.ReactNode }) {
           siklusGaji: input.siklusGaji,
           satuanPokok: input.satuanPokok,
           upahDefault: input.upahDefault,
+          upahLemburHariDefault: input.upahLemburHariDefault,
+          upahPerJamDefault: input.upahPerJamDefault,
+          upahPerInapDefault: input.upahPerInapDefault,
           kasbonSaldo: cleanSaldo,
           kasbonHistory: initialHistory,
           catatan: (input.catatan || '').trim(),
@@ -687,6 +703,174 @@ export function PayrollProvider({ children }: { children: React.ReactNode }) {
     return stamped.length;
   }, []);
 
+  const syncEmployeeRatesFromImport = useCallback(
+    (payloads: PayrollRecord[]) => {
+      if (!payloads.length) return;
+      const nowIso = new Date().toISOString();
+      const restoredKeys = new Set<string>();
+
+      payloads.forEach((p) => {
+        const nk = normalizeNikKey(p.nik);
+        const nm = normalizeNameKey(p.nama);
+        if (nk) restoredKeys.add(nk);
+        if (nm) restoredKeys.add(nm);
+      });
+
+      if (restoredKeys.size > 0) {
+        persistDeletedKeys((prev) => prev.filter((k) => !restoredKeys.has(k)));
+      }
+
+      persistEmployeeProfiles((prev) => {
+        const next = [...prev];
+        payloads.forEach((rec) => {
+          const cleanNama = (rec.nama || '').toString().trim();
+          const cleanNik = (rec.nik || '').toString().trim().toUpperCase();
+          if (!cleanNama) return;
+
+          const c = calculateTHP(rec);
+          const nikKey = normalizeNikKey(cleanNik);
+          const nameKey = normalizeNameKey(cleanNama);
+          const numericNik = cleanNik.replace(/\D/g, '')
+            ? String(parseInt(cleanNik.replace(/\D/g, ''), 10))
+            : '';
+
+          const idx = next.findIndex((p) => {
+            if (nikKey && normalizeNikKey(p.nik) === nikKey) return true;
+            const pDigits = (p.nik || '').replace(/\D/g, '');
+            const pNumeric = pDigits ? String(parseInt(pDigits, 10)) : '';
+            if (numericNik && pNumeric && numericNik === pNumeric) return true;
+            return Boolean(nameKey && normalizeNameKey(p.nama) === nameKey);
+          });
+
+          const nextUpahDefault =
+            c.tarifPokok > 0
+              ? c.tarifPokok
+              : idx >= 0
+                ? next[idx].upahDefault
+                : c.isTrip
+                  ? DEFAULT_PAYROLL_RATES.upahPerTrip
+                  : DEFAULT_PAYROLL_RATES.upahPerHari;
+          const nextUpahLemburHari =
+            c.upahLemburHari > 0
+              ? c.upahLemburHari
+              : idx >= 0
+                ? next[idx].upahLemburHariDefault
+                : DEFAULT_PAYROLL_RATES.upahLemburHari;
+          const nextUpahPerJam =
+            c.upahPerJam > 0
+              ? c.upahPerJam
+              : idx >= 0
+                ? next[idx].upahPerJamDefault
+                : DEFAULT_PAYROLL_RATES.upahPerJam;
+          const nextUpahPerInap =
+            c.upahPerInap > 0
+              ? c.upahPerInap
+              : idx >= 0
+                ? next[idx].upahPerInapDefault
+                : DEFAULT_PAYROLL_RATES.upahPerInap;
+
+          if (idx >= 0) {
+            const old = next[idx];
+            next[idx] = {
+              ...old,
+              nik: cleanNik || old.nik,
+              nama: cleanNama || old.nama,
+              divisi: c.skema,
+              siklusGaji: getSiklusDisplay(rec),
+              satuanPokok: c.isTrip ? 'trip' : 'hari',
+              upahDefault: nextUpahDefault,
+              upahLemburHariDefault: nextUpahLemburHari,
+              upahPerJamDefault: nextUpahPerJam,
+              upahPerInapDefault: nextUpahPerInap,
+              updatedAt: nowIso,
+            };
+          } else {
+            next.unshift({
+              id: makeEntryId('EMP'),
+              nik: cleanNik || '-',
+              nama: cleanNama,
+              divisi: c.skema,
+              siklusGaji: getSiklusDisplay(rec),
+              satuanPokok: c.isTrip ? 'trip' : 'hari',
+              upahDefault: nextUpahDefault,
+              upahLemburHariDefault: nextUpahLemburHari,
+              upahPerJamDefault: nextUpahPerJam,
+              upahPerInapDefault: nextUpahPerInap,
+              kasbonSaldo: 0,
+              kasbonHistory: [],
+              catatan: '',
+              updatedAt: nowIso,
+            });
+          }
+        });
+        return next;
+      });
+    },
+    [persistDeletedKeys, persistEmployeeProfiles],
+  );
+
+  const upsertPayrollBatch = useCallback(
+    async (
+      payloads: PayrollRecord[],
+    ): Promise<{ updated: number; created: number; failed: number }> => {
+      if (!payloads.length) return { updated: 0, created: 0, failed: 0 };
+
+      // Always update per-employee master salary & overtime rates right away
+      syncEmployeeRatesFromImport(payloads);
+
+      let updated = 0;
+      let created = 0;
+      let failed = 0;
+
+      const importedKeys = new Set<string>();
+
+      for (const payload of payloads) {
+        const pNik = (payload.nik || '').toString().trim().toUpperCase();
+        const pDigits = pNik.replace(/\D/g, '');
+        const pNum = pDigits ? String(parseInt(pDigits, 10)) : '';
+        const pNama = (payload.nama || '').toString().trim().toLowerCase();
+        const pPeriode = getPeriodeDisplay(payload).toLowerCase();
+
+        importedKeys.add(`${pNik}__${pPeriode}`);
+
+        const existingMatch = records.find((r) => {
+          if (getPeriodeDisplay(r).toLowerCase() !== pPeriode) return false;
+          const rNik = (r.nik || '').toString().trim().toUpperCase();
+          if (pNik && rNik && rNik === pNik) return true;
+          const rDigits = rNik.replace(/\D/g, '');
+          const rNum = rDigits ? String(parseInt(rDigits, 10)) : '';
+          if (pNum && rNum && rNum === pNum) return true;
+          return Boolean(pNama && (r.nama || '').toString().trim().toLowerCase() === pNama);
+        });
+
+        if (existingMatch) {
+          const ok = await updatePayrollRecord(existingMatch, payload);
+          if (ok) updated++;
+          else failed++;
+        } else {
+          const ok = await submitPayroll(payload);
+          if (ok) created++;
+          else failed++;
+        }
+      }
+
+      // Remove matching local drafts that have now been imported directly
+      setLocalDrafts((prev) => {
+        const next = prev.filter((d) => {
+          const key = `${(d.nik || '').trim().toUpperCase()}__${getPeriodeDisplay(d).toLowerCase()}`;
+          return !importedKeys.has(key);
+        });
+        if (next.length !== prev.length) {
+          localStorage.setItem(STORAGE_KEYS.PAYROLL_LOCAL_DRAFTS, JSON.stringify(next));
+        }
+        return next;
+      });
+
+      return { updated, created, failed };
+    },
+    [records, submitPayroll, syncEmployeeRatesFromImport, updatePayrollRecord],
+  );
+
   const deleteLocalDraft = useCallback((localDraftId: string) => {
     setLocalDrafts((prev) => {
       const next = prev.filter((d) => d.localDraftId !== localDraftId);
@@ -819,6 +1003,14 @@ export function PayrollProvider({ children }: { children: React.ReactNode }) {
         upahPerTrip: isTrip
           ? prof.upahDefault || existing?.upahPerTrip || DEFAULT_PAYROLL_RATES.upahPerTrip
           : existing?.upahPerTrip || 0,
+        upahLemburHari:
+          prof.upahLemburHariDefault ||
+          existing?.upahLemburHari ||
+          DEFAULT_PAYROLL_RATES.upahLemburHari,
+        upahPerJam:
+          prof.upahPerJamDefault || existing?.upahPerJam || DEFAULT_PAYROLL_RATES.upahPerJam,
+        upahPerInap:
+          prof.upahPerInapDefault || existing?.upahPerInap || DEFAULT_PAYROLL_RATES.upahPerInap,
       });
     });
     return Array.from(map.values());
@@ -890,6 +1082,8 @@ export function PayrollProvider({ children }: { children: React.ReactNode }) {
         localDrafts,
         saveLocalDraft,
         saveLocalDraftsBatch,
+        syncEmployeeRatesFromImport,
+        upsertPayrollBatch,
         deleteLocalDraft,
         promoteDraftToSPS,
         accounts,
