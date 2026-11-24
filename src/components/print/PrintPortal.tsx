@@ -14,7 +14,7 @@ export function PrintPortal() {
   if (!printJob) return null;
 
   return (
-    <div id="print-portal-mount" className="hidden">
+    <div id="print-portal-mount" className="print-portal-only">
       {printJob.type === 'single-slip' && (
         <div style={{ padding: '5mm' }}>
           <SingleEnvelopeSlip

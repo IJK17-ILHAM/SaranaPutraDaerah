@@ -399,10 +399,15 @@ body {
   print-color-adjust: exact;
 }
 
+.print-portal-only {
+  display: none;
+}
+
 .slip-compact-container {
   width: 100%;
-  height: 136mm;
-  max-height: 136mm;
+  height: 138mm;
+  max-height: 138mm;
+  min-width: 0;
   box-sizing: border-box;
   background: #ffffff !important;
   border: 1px solid #d1d5db;
@@ -416,6 +421,25 @@ body {
   overflow: hidden;
   -webkit-print-color-adjust: exact;
   print-color-adjust: exact;
+}
+
+.a4-preview-sheet {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-rows: repeat(2, minmax(0, 1fr));
+  gap: 4mm;
+  width: 210mm;
+  min-height: 297mm;
+  padding: 5mm;
+  box-sizing: border-box;
+  background: #ffffff;
+  border: 1px solid #d1d5db;
+  box-shadow: 0 8px 28px rgba(15, 23, 42, 0.14);
+}
+
+.a4-preview-sheet .slip-compact-container {
+  height: 141mm;
+  max-height: 141mm;
 }
 
 .print-report-sheet {
@@ -446,12 +470,22 @@ body {
 @media print {
   @page {
     size: A4 portrait;
-    margin: 5mm 5mm;
+    margin: 5mm;
+  }
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
   }
   body,
   html {
     background: #ffffff !important;
+    background-image: none !important;
     color: #000000 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    min-height: 0 !important;
+    height: auto !important;
+    overflow: visible !important;
   }
   .no-print {
     display: none !important;
@@ -459,22 +493,35 @@ body {
   #app-root-ui {
     display: none !important;
   }
+  .print-portal-only,
   #print-portal-mount {
     display: block !important;
     position: static !important;
     width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
     background: #ffffff !important;
+    overflow: visible !important;
   }
   .a4-page-grid {
     display: grid !important;
-    grid-template-columns: repeat(2, 1fr) !important;
-    grid-template-rows: repeat(2, 1fr) !important;
-    gap: 5mm !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    grid-template-rows: repeat(2, minmax(0, 1fr)) !important;
+    gap: 4mm !important;
     width: 200mm !important;
-    height: 285mm !important;
-    max-height: 285mm !important;
+    height: 282mm !important;
+    max-height: 282mm !important;
+    margin: 0 auto !important;
+    box-sizing: border-box !important;
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+  .a4-page-grid:not(:last-child) {
     page-break-after: always !important;
     break-after: page !important;
-    box-sizing: border-box !important;
+  }
+  .a4-page-grid .slip-compact-container {
+    height: 100% !important;
+    max-height: 139mm !important;
   }
 }

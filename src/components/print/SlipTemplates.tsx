@@ -585,15 +585,16 @@ export function CompactSlip({
         style={{
           background: '#000000',
           color: '#FFFFFF',
-          padding: '7px 10px',
+          padding: '8px 11px',
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
+          flexShrink: 0,
         }}
       >
         <div
           style={{
-            fontSize: '16px',
+            fontSize: '18px',
             fontWeight: 900,
             letterSpacing: '-0.04em',
             lineHeight: 1,
@@ -603,10 +604,25 @@ export function CompactSlip({
           spd.
         </div>
         <div style={{ textAlign: 'right' }}>
-          <div style={{ fontSize: '9.5px', fontWeight: 800, color: '#FFFFFF', lineHeight: 1.1 }}>
+          <div
+            style={{
+              fontSize: '10px',
+              fontWeight: 800,
+              letterSpacing: '0.04em',
+              color: '#FFFFFF',
+              lineHeight: 1.15,
+            }}
+          >
             SLIP GAJI
           </div>
-          <div style={{ fontSize: '6.5px', color: '#D4D4D8', marginTop: '1px' }}>
+          <div
+            style={{
+              fontSize: '6.5px',
+              letterSpacing: '0.05em',
+              color: '#D4D4D8',
+              marginTop: '1.5px',
+            }}
+          >
             PT. SARANA PUTRA DAERAH
           </div>
         </div>
@@ -616,7 +632,8 @@ export function CompactSlip({
       <div
         style={{
           flex: 1,
-          padding: '8px 10px 6px 10px',
+          minHeight: 0,
+          padding: '9px 11px 7px 11px',
           display: 'flex',
           flexDirection: 'column',
           justifyContent: 'space-between',
@@ -631,21 +648,23 @@ export function CompactSlip({
               justifyContent: 'space-between',
               alignItems: 'center',
               gap: '6px',
-              marginBottom: '6px',
+              marginBottom: '8px',
             }}
           >
-            <div style={{ fontSize: '7.5px', color: '#4B5563' }}>
+            <div style={{ fontSize: '7.5px', color: '#4B5563', minWidth: 0 }}>
               Periode: <b style={{ color: '#000000' }}>{periode}</b> ({siklus})
             </div>
             <span
               style={{
                 border: '1px solid #000000',
                 borderRadius: '9999px',
-                padding: '1.5px 7px',
+                padding: '2px 8px',
                 fontSize: '6.8px',
                 fontWeight: 800,
+                letterSpacing: '0.03em',
                 color: '#000000',
                 whiteSpace: 'nowrap',
+                flexShrink: 0,
               }}
             >
               STATUS: {status}
@@ -656,58 +675,89 @@ export function CompactSlip({
           <div
             style={{
               display: 'grid',
-              gridTemplateColumns: '1fr 1fr',
+              gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)',
               columnGap: '12px',
-              marginBottom: '7px',
-              fontSize: '7.5px',
+              marginBottom: '9px',
+              fontSize: '7.4px',
+              lineHeight: 1.3,
             }}
           >
-            <div>
+            <div style={{ minWidth: 0 }}>
               <div
                 style={{
                   display: 'flex',
                   gap: '6px',
-                  padding: '2.5px 0',
+                  padding: '3px 0',
                   borderBottom: '1px solid #D1D5DB',
                 }}
               >
-                <span style={{ width: '44px', color: '#6B7280', flexShrink: 0 }}>Nama</span>
-                <span style={{ fontWeight: 700, color: '#000000' }}>{item.nama || '-'}</span>
+                <span style={{ width: '42px', color: '#6B7280', flexShrink: 0 }}>Nama</span>
+                <span
+                  style={{
+                    fontWeight: 700,
+                    color: '#000000',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  {item.nama || '-'}
+                </span>
               </div>
               <div
                 style={{
                   display: 'flex',
                   gap: '6px',
-                  padding: '2.5px 0',
+                  padding: '3px 0',
                   borderBottom: '1px solid #D1D5DB',
                 }}
               >
-                <span style={{ width: '44px', color: '#6B7280', flexShrink: 0 }}>No/NIK</span>
-                <span style={{ fontWeight: 700, color: '#000000' }}>{item.nik || '-'}</span>
+                <span style={{ width: '42px', color: '#6B7280', flexShrink: 0 }}>No / NIK</span>
+                <span style={{ fontWeight: 700, color: '#000000', fontVariantNumeric: 'tabular-nums' }}>
+                  {item.nik || '-'}
+                </span>
               </div>
             </div>
-            <div>
+            <div style={{ minWidth: 0 }}>
               <div
                 style={{
                   display: 'flex',
                   gap: '6px',
-                  padding: '2.5px 0',
+                  padding: '3px 0',
                   borderBottom: '1px solid #D1D5DB',
                 }}
               >
-                <span style={{ width: '48px', color: '#6B7280', flexShrink: 0 }}>Divisi</span>
-                <span style={{ fontWeight: 700, color: '#000000' }}>{c.skema}</span>
+                <span style={{ width: '46px', color: '#6B7280', flexShrink: 0 }}>Divisi</span>
+                <span
+                  style={{
+                    fontWeight: 700,
+                    color: '#000000',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  {c.skema}
+                </span>
               </div>
               <div
                 style={{
                   display: 'flex',
                   gap: '6px',
-                  padding: '2.5px 0',
+                  padding: '3px 0',
                   borderBottom: '1px solid #D1D5DB',
                 }}
               >
-                <span style={{ width: '48px', color: '#6B7280', flexShrink: 0 }}>Kerja</span>
-                <span style={{ fontWeight: 700, color: '#000000' }}>
+                <span style={{ width: '46px', color: '#6B7280', flexShrink: 0 }}>Kerja</span>
+                <span
+                  style={{
+                    fontWeight: 700,
+                    color: '#000000',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
                   {unit}
                   {c.lemburNominal > 0 ? ` • ${c.breakdownText}` : ''}
                 </span>
@@ -719,28 +769,30 @@ export function CompactSlip({
           <div
             style={{
               display: 'grid',
-              gridTemplateColumns: '1fr 1fr',
+              gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)',
               gap: '7px',
-              marginBottom: '7px',
+              marginBottom: '8px',
             }}
           >
             {/* Penghasilan */}
             <div
               style={{
                 border: '1px solid #D1D5DB',
-                borderRadius: '5px',
+                borderRadius: '6px',
                 overflow: 'hidden',
                 display: 'flex',
                 flexDirection: 'column',
+                minWidth: 0,
               }}
             >
               <div
                 style={{
                   background: '#F3F4F6',
                   borderBottom: '1px solid #D1D5DB',
-                  padding: '3.5px 6px',
+                  padding: '4px 6.5px',
                   fontSize: '7px',
                   fontWeight: 800,
+                  letterSpacing: '0.04em',
                   color: '#000000',
                 }}
               >
@@ -753,14 +805,34 @@ export function CompactSlip({
                     style={{
                       display: 'flex',
                       justifyContent: 'space-between',
+                      alignItems: 'center',
                       gap: '4px',
-                      padding: '3px 6px',
+                      padding: '3.8px 6.5px',
                       borderBottom: '1px solid #E5E7EB',
-                      fontSize: '7.2px',
+                      fontSize: '7px',
+                      lineHeight: 1.25,
                     }}
                   >
-                    <span style={{ color: '#374151' }}>{row.label}</span>
-                    <span style={{ fontWeight: 700, color: '#000000', whiteSpace: 'nowrap' }}>
+                    <span
+                      style={{
+                        color: '#374151',
+                        minWidth: 0,
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {row.label}
+                    </span>
+                    <span
+                      style={{
+                        fontWeight: 700,
+                        color: '#000000',
+                        whiteSpace: 'nowrap',
+                        fontVariantNumeric: 'tabular-nums',
+                        flexShrink: 0,
+                      }}
+                    >
                       {row.value}
                     </span>
                   </div>
@@ -770,15 +842,18 @@ export function CompactSlip({
                     marginTop: 'auto',
                     display: 'flex',
                     justifyContent: 'space-between',
+                    alignItems: 'center',
                     gap: '4px',
-                    padding: '4px 6px',
-                    fontSize: '7.5px',
+                    padding: '4.5px 6.5px',
+                    fontSize: '7.4px',
                     fontWeight: 800,
                     color: '#000000',
                   }}
                 >
                   <span>GAJI KOTOR</span>
-                  <span style={{ whiteSpace: 'nowrap' }}>{formatRupiah(c.gajiKotor)}</span>
+                  <span style={{ whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>
+                    {formatRupiah(c.gajiKotor)}
+                  </span>
                 </div>
               </div>
             </div>
@@ -787,19 +862,21 @@ export function CompactSlip({
             <div
               style={{
                 border: '1px solid #D1D5DB',
-                borderRadius: '5px',
+                borderRadius: '6px',
                 overflow: 'hidden',
                 display: 'flex',
                 flexDirection: 'column',
+                minWidth: 0,
               }}
             >
               <div
                 style={{
                   background: '#F3F4F6',
                   borderBottom: '1px solid #D1D5DB',
-                  padding: '3.5px 6px',
+                  padding: '4px 6.5px',
                   fontSize: '7px',
                   fontWeight: 800,
+                  letterSpacing: '0.04em',
                   color: '#000000',
                 }}
               >
@@ -810,14 +887,34 @@ export function CompactSlip({
                   style={{
                     display: 'flex',
                     justifyContent: 'space-between',
+                    alignItems: 'center',
                     gap: '4px',
-                    padding: '3px 6px',
+                    padding: '3.8px 6.5px',
                     borderBottom: '1px solid #E5E7EB',
-                    fontSize: '7.2px',
+                    fontSize: '7px',
+                    lineHeight: 1.25,
                   }}
                 >
-                  <span style={{ color: '#374151' }}>{kasbonLabel}</span>
-                  <span style={{ fontWeight: 700, color: '#000000', whiteSpace: 'nowrap' }}>
+                  <span
+                    style={{
+                      color: '#374151',
+                      minWidth: 0,
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {kasbonLabel}
+                  </span>
+                  <span
+                    style={{
+                      fontWeight: 700,
+                      color: '#000000',
+                      whiteSpace: 'nowrap',
+                      fontVariantNumeric: 'tabular-nums',
+                      flexShrink: 0,
+                    }}
+                  >
                     {formatRupiah(c.kasbon)}
                   </span>
                 </div>
@@ -825,14 +922,24 @@ export function CompactSlip({
                   style={{
                     display: 'flex',
                     justifyContent: 'space-between',
+                    alignItems: 'center',
                     gap: '4px',
-                    padding: '3px 6px',
+                    padding: '3.8px 6.5px',
                     borderBottom: '1px solid #E5E7EB',
-                    fontSize: '7.2px',
+                    fontSize: '7px',
+                    lineHeight: 1.25,
                   }}
                 >
                   <span style={{ color: '#374151' }}>Iuran BPJS</span>
-                  <span style={{ fontWeight: 700, color: '#000000', whiteSpace: 'nowrap' }}>
+                  <span
+                    style={{
+                      fontWeight: 700,
+                      color: '#000000',
+                      whiteSpace: 'nowrap',
+                      fontVariantNumeric: 'tabular-nums',
+                      flexShrink: 0,
+                    }}
+                  >
                     {formatRupiah(c.bpjs)}
                   </span>
                 </div>
@@ -840,14 +947,24 @@ export function CompactSlip({
                   style={{
                     display: 'flex',
                     justifyContent: 'space-between',
+                    alignItems: 'center',
                     gap: '4px',
-                    padding: '3px 6px',
+                    padding: '3.8px 6.5px',
                     borderBottom: '1px solid #E5E7EB',
-                    fontSize: '7.2px',
+                    fontSize: '7px',
+                    lineHeight: 1.25,
                   }}
                 >
                   <span style={{ color: '#374151' }}>Sisa Kasbon</span>
-                  <span style={{ fontWeight: 700, color: '#000000', whiteSpace: 'nowrap' }}>
+                  <span
+                    style={{
+                      fontWeight: 700,
+                      color: '#000000',
+                      whiteSpace: 'nowrap',
+                      fontVariantNumeric: 'tabular-nums',
+                      flexShrink: 0,
+                    }}
+                  >
                     {sisaKasbonText}
                   </span>
                 </div>
@@ -856,15 +973,18 @@ export function CompactSlip({
                     marginTop: 'auto',
                     display: 'flex',
                     justifyContent: 'space-between',
+                    alignItems: 'center',
                     gap: '4px',
-                    padding: '4px 6px',
-                    fontSize: '7.5px',
+                    padding: '4.5px 6.5px',
+                    fontSize: '7.4px',
                     fontWeight: 800,
                     color: '#000000',
                   }}
                 >
                   <span>JUMLAH POT.</span>
-                  <span style={{ whiteSpace: 'nowrap' }}>{formatRupiah(c.totalPot)}</span>
+                  <span style={{ whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>
+                    {formatRupiah(c.totalPot)}
+                  </span>
                 </div>
               </div>
             </div>
@@ -876,18 +996,28 @@ export function CompactSlip({
               background: '#000000',
               color: '#FFFFFF',
               borderRadius: '6px',
-              padding: '6px 10px',
+              padding: '8px 11px',
               display: 'flex',
               justifyContent: 'space-between',
               alignItems: 'center',
-              marginBottom: kasbonInfo.hasKasbonNotice ? '5px' : '0',
+              marginBottom: kasbonInfo.hasKasbonNotice ? '6px' : '0',
             }}
           >
             <div>
-              <div style={{ fontSize: '7.8px', fontWeight: 800, color: '#FFFFFF' }}>GAJI BERSIH</div>
-              <div style={{ fontSize: '6.5px', color: '#D1D5DB' }}>Take Home Pay</div>
+              <div style={{ fontSize: '8.2px', fontWeight: 800, color: '#FFFFFF' }}>GAJI BERSIH</div>
+              <div style={{ fontSize: '6.6px', color: '#D1D5DB', marginTop: '1px' }}>
+                Take Home Pay
+              </div>
             </div>
-            <div style={{ fontSize: '12px', fontWeight: 900, color: '#FFFFFF' }}>
+            <div
+              style={{
+                fontSize: '14px',
+                fontWeight: 900,
+                color: '#FFFFFF',
+                fontVariantNumeric: 'tabular-nums',
+                letterSpacing: '-0.02em',
+              }}
+            >
               {formatRupiah(c.thp)}
             </div>
           </div>
@@ -899,14 +1029,15 @@ export function CompactSlip({
                 background: '#F3F4F6',
                 borderRadius: '4px',
                 borderLeft: '2.5px solid #000000',
-                padding: '3.5px 6px',
-                fontSize: '6.6px',
+                padding: '4.5px 7px',
+                fontSize: '6.7px',
                 color: '#374151',
+                lineHeight: 1.35,
               }}
             >
               <b style={{ color: '#000000' }}>Info Kasbon:</b>{' '}
-              {kasbonInfo.saldoAwal > 0 && <>Awal {formatRupiah(kasbonInfo.saldoAwal)} &bull; </>}
-              Potong {formatRupiah(kasbonInfo.potonganKasbon)} &bull; Sisa{' '}
+              {kasbonInfo.saldoAwal > 0 && <>Saldo awal {formatRupiah(kasbonInfo.saldoAwal)} &bull; </>}
+              Potongan periode ini {formatRupiah(kasbonInfo.potonganKasbon)} &bull; Sisa{' '}
               {kasbonInfo.sisaKasbon > 0 ? formatRupiah(kasbonInfo.sisaKasbon) : 'Lunas (Rp 0)'}
             </div>
           )}
@@ -917,19 +1048,19 @@ export function CompactSlip({
           style={{
             display: 'grid',
             gridTemplateColumns: '1fr 1fr',
-            gap: '20px',
-            padding: '4px 12px 2px 12px',
+            gap: '22px',
+            padding: '6px 14px 3px 14px',
             textAlign: 'center',
             fontSize: '7.2px',
           }}
         >
           <div>
             <div style={{ color: '#4B5563' }}>Diterima oleh,</div>
-            <div style={{ height: '16px' }} />
+            <div style={{ height: '22px' }} />
             <div
               style={{
                 borderTop: '1px solid #000000',
-                paddingTop: '2.5px',
+                paddingTop: '3px',
                 fontWeight: 700,
                 color: '#000000',
               }}
@@ -939,11 +1070,11 @@ export function CompactSlip({
           </div>
           <div>
             <div style={{ color: '#4B5563' }}>Disetujui oleh, HR / Finance</div>
-            <div style={{ height: '16px' }} />
+            <div style={{ height: '22px' }} />
             <div
               style={{
                 borderTop: '1px solid #000000',
-                paddingTop: '2.5px',
+                paddingTop: '3px',
                 fontWeight: 700,
                 color: '#000000',
               }}
@@ -960,8 +1091,9 @@ export function CompactSlip({
           background: '#000000',
           color: '#D4D4D8',
           textAlign: 'center',
-          padding: '4px 8px',
-          fontSize: '6.2px',
+          padding: '4.5px 8px',
+          fontSize: '6.3px',
+          flexShrink: 0,
         }}
       >
         Dokumen ini sah dan diterbitkan oleh PT. Sarana Putra Daerah &bull; Bersifat rahasia

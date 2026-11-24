@@ -310,6 +310,330 @@ export function downloadSingleSlipPDF(item: PayrollRecord, liveSaldoKasbon = 0):
   doc.save(`Slip_Gaji_${safeName}_${safePeriode}.pdf`);
 }
 
+export function downloadBatchSlipsA4PDF(
+  items: PayrollRecord[],
+  getLiveKasbon?: (nik: string, nama?: string) => number,
+): boolean {
+  if (!items.length) return false;
+
+  const doc = new jsPDF({
+    orientation: 'portrait',
+    unit: 'mm',
+    format: 'a4',
+  });
+
+  const pageW = 210;
+  const pageH = 297;
+  const marginX = 5;
+  const marginY = 5;
+  const gapX = 4;
+  const gapY = 4;
+  const cellW = (pageW - marginX * 2 - gapX) / 2; // 98mm
+  const cellH = (pageH - marginY * 2 - gapY) / 2; // 141.5mm
+
+  const BLACK: [number, number, number] = [0, 0, 0];
+  const WHITE: [number, number, number] = [255, 255, 255];
+  const GRAY_HEADER: [number, number, number] = [243, 244, 246];
+  const GRAY_BORDER: [number, number, number] = [209, 213, 219];
+  const GRAY_DIVIDER: [number, number, number] = [229, 231, 235];
+  const TEXT_MUTED: [number, number, number] = [107, 114, 128];
+  const TEXT_SUB: [number, number, number] = [55, 65, 81];
+
+  const drawQuarterSlip = (item: PayrollRecord, ox: number, oy: number) => {
+    const c = calculateTHP(item);
+    const periode = getPeriodeDisplay(item);
+    const siklus = getSiklusDisplay(item);
+    const status = getStatusDisplay(item).toUpperCase();
+    const activeOvertimeRows = getActiveOvertimeRows(c);
+    const liveKasbon = getLiveKasbon ? getLiveKasbon(item.nik, item.nama) : 0;
+    const kasbonInfo = resolveSlipKasbonInfo(item, c, liveKasbon);
+    const tunjanganVal = cleanRupiahToNumber(item.tunjangan);
+
+    const padX = 4.2;
+    const innerW = cellW - padX * 2;
+    const ix = ox + padX;
+
+    // Outer slip border
+    doc.setFillColor(...WHITE);
+    doc.setDrawColor(...GRAY_BORDER);
+    doc.setLineWidth(0.28);
+    doc.rect(ox, oy, cellW, cellH, 'FD');
+
+    // 1. Top Black Header Banner
+    const topH = 11.2;
+    doc.setFillColor(...BLACK);
+    doc.rect(ox, oy, cellW, topH, 'F');
+
+    doc.setTextColor(...WHITE);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(14.5);
+    doc.text('spd.', ix, oy + 7.5);
+
+    doc.setFontSize(8.2);
+    doc.text('SLIP GAJI', ox + cellW - padX, oy + 5.2, { align: 'right' });
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(5.4);
+    doc.setTextColor(212, 212, 216);
+    doc.text('PT. SARANA PUTRA DAERAH', ox + cellW - padX, oy + 8.6, { align: 'right' });
+
+    // 2. Period + Status Pill
+    let y = oy + topH + 5.6;
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(6.2);
+    doc.setTextColor(...TEXT_SUB);
+    doc.text('Periode: ', ix, y);
+    const perPrefixW = doc.getTextWidth('Periode: ');
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(...BLACK);
+    doc.text(periode, ix + perPrefixW, y);
+    const perValW = doc.getTextWidth(periode);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(...TEXT_SUB);
+    doc.text(` (${siklus})`, ix + perPrefixW + perValW, y, {
+      maxWidth: innerW - perPrefixW - perValW - 22,
+    });
+
+    const statusText = `STATUS: ${status}`;
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(5.6);
+    const pillW = Math.max(21, doc.getTextWidth(statusText) + 5.5);
+    const pillX = ox + cellW - padX - pillW;
+    doc.setDrawColor(...BLACK);
+    doc.setLineWidth(0.28);
+    doc.roundedRect(pillX, y - 3.3, pillW, 4.7, 2.3, 2.3, 'S');
+    doc.setTextColor(...BLACK);
+    doc.text(statusText, pillX + pillW / 2, y - 0.25, { align: 'center' });
+
+    // 3. Employee Info Grid (2x2 clean bottom hairlines)
+    y += 5.4;
+    const infoGap = 4.5;
+    const halfW = (innerW - infoGap) / 2;
+    const rightColX = ix + halfW + infoGap;
+    const unitLabel = c.isTrip
+      ? `${c.unitPokok} Trip${c.lemburNominal > 0 ? ` • ${c.breakdownText}` : ''}`
+      : `${c.unitPokok} HR${c.lemburNominal > 0 ? ` • ${c.breakdownText}` : ''}`;
+
+    const drawInfoLine = (lx: number, ly: number, label: string, val: string) => {
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(6.1);
+      doc.setTextColor(...TEXT_MUTED);
+      doc.text(label, lx, ly);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(...BLACK);
+      const valMaxW = halfW - 14.5;
+      const truncated = doc.splitTextToSize(val || '-', valMaxW)[0] || '-';
+      doc.text(truncated, lx + 14.5, ly);
+      doc.setDrawColor(...GRAY_BORDER);
+      doc.setLineWidth(0.2);
+      doc.line(lx, ly + 1.4, lx + halfW, ly + 1.4);
+    };
+
+    drawInfoLine(ix, y, 'Nama', item.nama || '-');
+    drawInfoLine(rightColX, y, 'Divisi', c.skema);
+    drawInfoLine(ix, y + 4.8, 'No / NIK', item.nik || '-');
+    drawInfoLine(rightColX, y + 4.8, 'Kerja', unitLabel);
+
+    // 4. Two Side-by-Side Rounded Cards: PENGHASILAN & POTONGAN
+    y += 9.4;
+    const cardGap = 2.8;
+    const cardW = (innerW - cardGap) / 2;
+    const rightCardX = ix + cardW + cardGap;
+
+    const pokokLabel = c.isTrip ? `Gaji Pokok (${c.unitPokok} Trip)` : `Gaji Pokok (${c.unitPokok} HR)`;
+    const kasbonLabel =
+      c.keterangan && c.keterangan !== '-' ? `Kasbon (${c.keterangan})` : 'Potongan Kasbon';
+    const sisaKasbonText = kasbonInfo.hasKasbonNotice
+      ? kasbonInfo.sisaKasbon > 0
+        ? formatRupiah(kasbonInfo.sisaKasbon)
+        : 'Lunas (Rp 0)'
+      : '-';
+
+    const incomeRows: Array<{ label: string; value: string }> = [
+      { label: pokokLabel, value: formatRupiah(c.gapok) },
+      ...(activeOvertimeRows.length > 0
+        ? activeOvertimeRows.map((row) => ({ label: row.label, value: formatRupiah(row.amount) }))
+        : [{ label: 'Lembur', value: '-' }]),
+    ];
+    if (tunjanganVal > 0 || incomeRows.length < 3) {
+      incomeRows.push({
+        label: 'Tunjangan Lainnya',
+        value: tunjanganVal > 0 ? formatRupiah(tunjanganVal) : '-',
+      });
+    }
+
+    const deductionRows: Array<{ label: string; value: string }> = [
+      { label: kasbonLabel, value: formatRupiah(c.kasbon) },
+      { label: 'Iuran BPJS', value: formatRupiah(c.bpjs) },
+      { label: 'Sisa Kasbon', value: sisaKasbonText },
+    ];
+
+    const maxDataRows = Math.max(incomeRows.length, deductionRows.length);
+    const headerH = 5.0;
+    const rowH = maxDataRows > 3 ? 4.4 : 5.2;
+    const footerH = 5.6;
+    const cardH = headerH + maxDataRows * rowH + footerH;
+
+    const drawCard = (
+      cx: number,
+      title: string,
+      rows: Array<{ label: string; value: string }>,
+      totalLabel: string,
+      totalVal: string,
+    ) => {
+      doc.setFillColor(...GRAY_HEADER);
+      doc.roundedRect(cx, y, cardW, headerH + 1.4, 1.5, 1.5, 'F');
+      doc.setFillColor(...WHITE);
+      doc.rect(cx, y + headerH, cardW, cardH - headerH, 'F');
+
+      doc.setDrawColor(...GRAY_BORDER);
+      doc.setLineWidth(0.24);
+      doc.roundedRect(cx, y, cardW, cardH, 1.5, 1.5, 'S');
+      doc.line(cx, y + headerH, cx + cardW, y + headerH);
+
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(5.9);
+      doc.setTextColor(...BLACK);
+      doc.text(title, cx + 2.2, y + 3.5);
+
+      let ry = y + headerH;
+      rows.forEach((r) => {
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(5.8);
+        const valW = doc.getTextWidth(r.value);
+        const maxLabelW = Math.max(12, cardW - valW - 5.2);
+
+        doc.setFont('helvetica', 'normal');
+        doc.setTextColor(...TEXT_SUB);
+        const lbl = doc.splitTextToSize(r.label, maxLabelW)[0] || r.label;
+        doc.text(lbl, cx + 2.2, ry + rowH - 1.6);
+
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor(...BLACK);
+        doc.text(r.value, cx + cardW - 2.2, ry + rowH - 1.6, { align: 'right' });
+
+        ry += rowH;
+        doc.setDrawColor(...GRAY_DIVIDER);
+        doc.setLineWidth(0.18);
+        doc.line(cx, ry, cx + cardW, ry);
+      });
+
+      const footY = y + cardH - footerH;
+      doc.setDrawColor(...GRAY_DIVIDER);
+      doc.line(cx, footY, cx + cardW, footY);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(6.1);
+      doc.setTextColor(...BLACK);
+      doc.text(totalLabel, cx + 2.2, footY + 3.8);
+      doc.text(totalVal, cx + cardW - 2.2, footY + 3.8, { align: 'right' });
+    };
+
+    drawCard(ix, 'PENGHASILAN', incomeRows, 'GAJI KOTOR', formatRupiah(c.gajiKotor));
+    drawCard(rightCardX, 'POTONGAN', deductionRows, 'JUMLAH POT.', formatRupiah(c.totalPot));
+
+    // 5. GAJI BERSIH Black Rounded Banner
+    y += cardH + 3.4;
+    const thpH = 11.4;
+    doc.setFillColor(...BLACK);
+    doc.roundedRect(ix, y, innerW, thpH, 1.8, 1.8, 'F');
+
+    doc.setTextColor(...WHITE);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(7.2);
+    doc.text('GAJI BERSIH', ix + 3.6, y + 5.1);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(5.6);
+    doc.setTextColor(209, 213, 219);
+    doc.text('Take Home Pay', ix + 3.6, y + 8.7);
+
+    doc.setTextColor(...WHITE);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(11.8);
+    doc.text(formatRupiah(c.thp), ix + innerW - 3.6, y + 7.4, { align: 'right' });
+
+    y += thpH + 2.4;
+
+    // 6. Info Kasbon Strip
+    if (kasbonInfo.hasKasbonNotice) {
+      const infoH = 6.2;
+      doc.setFillColor(...GRAY_HEADER);
+      doc.roundedRect(ix, y, innerW, infoH, 1.2, 1.2, 'F');
+      doc.setFillColor(...BLACK);
+      doc.rect(ix, y, 1.0, infoH, 'F');
+
+      const sisaLabel =
+        kasbonInfo.sisaKasbon > 0 ? formatRupiah(kasbonInfo.sisaKasbon) : 'Lunas (Rp 0)';
+      const awalPart =
+        kasbonInfo.saldoAwal > 0 ? `Awal ${formatRupiah(kasbonInfo.saldoAwal)} • ` : '';
+
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(5.5);
+      doc.setTextColor(...BLACK);
+      doc.text('Info Kasbon:', ix + 2.6, y + 4.0);
+      const lblW = doc.getTextWidth('Info Kasbon: ');
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(...TEXT_SUB);
+      const infoText = `${awalPart}Potong ${formatRupiah(kasbonInfo.potonganKasbon)} • Sisa ${sisaLabel}`;
+      const infoLine = doc.splitTextToSize(infoText, innerW - 4.5 - lblW)[0] || infoText;
+      doc.text(infoLine, ix + 2.6 + lblW, y + 4.0);
+    }
+
+    // 7. Signatures (pinned neatly above black footer)
+    const footerBarH = 5.4;
+    const sigNameY = oy + cellH - footerBarH - 4.2;
+    const sigLineY = sigNameY - 3.4;
+    const sigTopY = sigLineY - 12.2;
+    const leftSigX = ix + innerW * 0.25;
+    const rightSigX = ix + innerW * 0.75;
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(6.1);
+    doc.setTextColor(...TEXT_SUB);
+    doc.text('Diterima oleh,', leftSigX, sigTopY, { align: 'center' });
+    doc.text('Disetujui oleh, HR / Finance', rightSigX, sigTopY, { align: 'center' });
+
+    doc.setDrawColor(...BLACK);
+    doc.setLineWidth(0.25);
+    doc.line(leftSigX - 15, sigLineY, leftSigX + 15, sigLineY);
+    doc.line(rightSigX - 15, sigLineY, rightSigX + 15, sigLineY);
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(6.3);
+    doc.setTextColor(...BLACK);
+    doc.text(`( ${item.nama || 'Karyawan'} )`, leftSigX, sigNameY, { align: 'center' });
+    doc.text('( PT. Sarana Putra Daerah )', rightSigX, sigNameY, { align: 'center' });
+
+    // 8. Bottom Black Footer Bar
+    doc.setFillColor(...BLACK);
+    doc.rect(ox, oy + cellH - footerBarH, cellW, footerBarH, 'F');
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(5.1);
+    doc.setTextColor(212, 212, 216);
+    doc.text(
+      'Dokumen ini sah dan diterbitkan oleh PT. Sarana Putra Daerah  •  Bersifat rahasia',
+      ox + cellW / 2,
+      oy + cellH - 1.9,
+      { align: 'center' },
+    );
+  };
+
+  const totalPages = Math.ceil(items.length / 4);
+  for (let p = 0; p < totalPages; p++) {
+    if (p > 0) doc.addPage();
+    const chunk = items.slice(p * 4, p * 4 + 4);
+    chunk.forEach((item, idx) => {
+      const col = idx % 2;
+      const row = Math.floor(idx / 2);
+      const ox = marginX + col * (cellW + gapX);
+      const oy = marginY + row * (cellH + gapY);
+      drawQuarterSlip(item, ox, oy);
+    });
+  }
+
+  const firstPeriode = getPeriodeDisplay(items[0]).replace(/[^a-zA-Z0-9-]/g, '_');
+  doc.save(`Slip_Gaji_A4_4PerHalaman_${items.length}Karyawan_${firstPeriode}.pdf`);
+  return true;
+}
+
 export function getNotaPdfFilename(trx: KtTransaction): string {
   const invCode = normalizeInvoiceCode(trx.nota || trx.id || '001');
   const safeNota = invCode.replace(/[^a-zA-Z0-9]+/g, '_').replace(/^_+|_+$/g, '');

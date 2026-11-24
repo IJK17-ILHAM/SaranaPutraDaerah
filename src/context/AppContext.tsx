@@ -1,4 +1,4 @@
-import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { STORAGE_KEYS, type ThemeId } from '../config/constants';
 import type { AppSuite, MenuId, UserSession } from '../types/auth';
 import type { KtTransaction } from '../types/kasTonase';
@@ -46,6 +46,9 @@ interface AppContextValue {
   slipModalItem: PayrollRecord | null;
   openSlipModal: (item: PayrollRecord) => void;
   closeSlipModal: () => void;
+  batchSlipModalItems: PayrollRecord[] | null;
+  openBatchSlipModal: (items: PayrollRecord[]) => void;
+  closeBatchSlipModal: () => void;
   printJob: PrintJob;
   triggerPrint: (job: NonNullable<PrintJob>) => void;
 }
@@ -77,12 +80,28 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     (ConfirmOptions & { resolve: (val: boolean) => void }) | null
   >(null);
   const [slipModalItem, setSlipModalItem] = useState<PayrollRecord | null>(null);
+  const [batchSlipModalItems, setBatchSlipModalItems] = useState<PayrollRecord[] | null>(null);
   const [printJob, setPrintJob] = useState<PrintJob>(null);
+
+  const printCleanupRef = useRef<(() => void) | null>(null);
+  const printTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
     document.body.setAttribute('data-theme', theme);
     localStorage.setItem(STORAGE_KEYS.THEME, theme);
   }, [theme]);
+
+  useEffect(() => {
+    return () => {
+      if (printTimerRef.current !== null) {
+        window.clearTimeout(printTimerRef.current);
+      }
+      if (printCleanupRef.current) {
+        printCleanupRef.current();
+        printCleanupRef.current = null;
+      }
+    };
+  }, []);
 
   const setTheme = useCallback((next: ThemeId) => {
     setThemeState(next);
@@ -141,12 +160,47 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setSlipModalItem(null);
   }, []);
 
+  const openBatchSlipModal = useCallback((items: PayrollRecord[]) => {
+    if (!items.length) return;
+    setBatchSlipModalItems(items);
+  }, []);
+
+  const closeBatchSlipModal = useCallback(() => {
+    setBatchSlipModalItems(null);
+  }, []);
+
   const triggerPrint = useCallback((job: NonNullable<PrintJob>) => {
+    if (printTimerRef.current !== null) {
+      window.clearTimeout(printTimerRef.current);
+      printTimerRef.current = null;
+    }
+    if (printCleanupRef.current) {
+      printCleanupRef.current();
+      printCleanupRef.current = null;
+    }
+
     setPrintJob(job);
-    setTimeout(() => {
-      window.print();
-      setTimeout(() => setPrintJob(null), 200);
-    }, 180);
+
+    const handleAfterPrint = () => {
+      setPrintJob(null);
+      window.removeEventListener('afterprint', handleAfterPrint);
+      printCleanupRef.current = null;
+    };
+
+    window.addEventListener('afterprint', handleAfterPrint);
+    printCleanupRef.current = () => {
+      window.removeEventListener('afterprint', handleAfterPrint);
+    };
+
+    // Wait for React commit + layout paint before opening the browser Print dialog
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        printTimerRef.current = window.setTimeout(() => {
+          printTimerRef.current = null;
+          window.print();
+        }, 120);
+      });
+    });
   }, []);
 
   return (
@@ -170,6 +224,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         slipModalItem,
         openSlipModal,
         closeSlipModal,
+        batchSlipModalItems,
+        openBatchSlipModal,
+        closeBatchSlipModal,
         printJob,
         triggerPrint,
       }}

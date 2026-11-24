@@ -8,7 +8,7 @@ import { formatRupiah } from '../../utils/format';
 import { buildDivisionSummary } from '../../utils/payrollCalc';
 
 export function LaporanPayrollPage() {
-  const { triggerPrint, showToast } = useApp();
+  const { openBatchSlipModal, showToast } = useApp();
   const { records, filteredRecords, kpiRecords } = usePayroll();
 
   const summaryRows = useMemo(() => buildDivisionSummary(kpiRecords), [kpiRecords]);
@@ -39,7 +39,7 @@ export function LaporanPayrollPage() {
       showToast('Tidak ada data slip untuk dicetak.', 'warning');
       return;
     }
-    triggerPrint({ type: 'batch-slips', items });
+    openBatchSlipModal(items);
   };
 
   return (

@@ -23,7 +23,7 @@ function getSlipRowKey(item: PayrollRecord, idx: number): string {
 }
 
 export function SlipGajiPage() {
-  const { openSlipModal, triggerPrint, showToast } = useApp();
+  const { openSlipModal, openBatchSlipModal, showToast } = useApp();
   const {
     records,
     filteredRecords,
@@ -96,7 +96,7 @@ export function SlipGajiPage() {
       showToast('Pilih minimal 1 karyawan pada daftar untuk dicetak.', 'warning');
       return;
     }
-    triggerPrint({ type: 'batch-slips', items: selectedPrintItems });
+    openBatchSlipModal(selectedPrintItems);
   };
 
   const handleBatchPrintAll = () => {
@@ -105,7 +105,7 @@ export function SlipGajiPage() {
       showToast('Tidak ada data slip untuk dicetak.', 'warning');
       return;
     }
-    triggerPrint({ type: 'batch-slips', items });
+    openBatchSlipModal(items);
   };
 
   const handleExport = () => {

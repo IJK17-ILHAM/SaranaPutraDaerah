@@ -1,6 +1,7 @@
 import { ConfirmModal } from './components/common/ConfirmModal';
 import { ToastContainer } from './components/common/ToastContainer';
 import { Sidebar } from './components/layout/Sidebar';
+import { BatchSlipModal } from './components/payroll/BatchSlipModal';
 import { SlipModal } from './components/payroll/SlipModal';
 import { PrintPortal } from './components/print/PrintPortal';
 import { AppProvider, useApp } from './context/AppContext';
@@ -80,6 +81,7 @@ function PortalShell() {
       </div>
 
       <SlipModal />
+      <BatchSlipModal />
       <ConfirmModal />
       <ToastContainer />
       <PrintPortal />
