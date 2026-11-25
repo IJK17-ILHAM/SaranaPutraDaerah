@@ -19,6 +19,7 @@ export const STORAGE_KEYS = {
   KT_PAYMENTS: 'spd_kt_payments',
   KT_STOCK_MUTATIONS: 'spd_kt_stock_mutations',
   KT_INITIALIZED: 'spd_kt_initialized',
+  ARMADA_UNITS: 'spd_armada_units',
 } as const;
 
 export const DIVISIONS = ['Karyawan limbah', 'Supir B3', 'Supir SPD'] as const;
