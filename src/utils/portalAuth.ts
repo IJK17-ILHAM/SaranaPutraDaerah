@@ -32,6 +32,21 @@ export function isActiveSuperAdminSession(user: UserSession | null): boolean {
   return isSuperAdminRole(user.role);
 }
 
+export function isSopirRole(role?: string | null): boolean {
+  const normalized = (role || '').toString().trim().toLowerCase().replace(/\s+/g, ' ');
+  return normalized === 'sopir' || normalized === 'supir' || normalized === 'driver';
+}
+
+export function isActiveSopirSession(user: UserSession | null): boolean {
+  if (!user) return false;
+  if ((user.status || '').toString().trim().toLowerCase() === 'nonaktif') return false;
+  return isSopirRole(user.role);
+}
+
+export function canAccessArmadaSession(user: UserSession | null): boolean {
+  return isActiveSuperAdminSession(user) || isActiveSopirSession(user);
+}
+
 /**
  * Strictly allowlists redirect targets from query params to prevent open redirects.
  */

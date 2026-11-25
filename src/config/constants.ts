@@ -20,6 +20,16 @@ export const STORAGE_KEYS = {
   KT_STOCK_MUTATIONS: 'spd_kt_stock_mutations',
   KT_INITIALIZED: 'spd_kt_initialized',
   ARMADA_UNITS: 'spd_armada_units',
+  ARMADA_PELANGGAN: 'spd_armada_pelanggan',
+  ARMADA_LOKASI: 'spd_armada_lokasi',
+  ARMADA_TARIF: 'spd_armada_tarif',
+  ARMADA_PERJALANAN: 'spd_armada_perjalanan',
+  ARMADA_UANG_JALAN: 'spd_armada_uang_jalan',
+  ARMADA_SEWA: 'spd_armada_sewa',
+  ARMADA_P2H: 'spd_armada_p2h',
+  ARMADA_MAINTENANCE: 'spd_armada_maintenance',
+  ARMADA_PERMINTAAN_BARANG: 'spd_armada_permintaan_barang',
+  ARMADA_KENDALA: 'spd_armada_kendala',
 } as const;
 
 export const DIVISIONS = ['Karyawan limbah', 'Supir B3', 'Supir SPD'] as const;
@@ -34,6 +44,7 @@ export const ACCOUNT_ROLES = [
   'Manajer Operasional',
   'Supervisor',
   'Staff',
+  'Sopir',
 ] as const;
 
 export const DEFAULT_PAYROLL_RATES = {

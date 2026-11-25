@@ -15,37 +15,68 @@ import {
 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { UnitArmadaFormModal } from '../../components/armada/UnitArmadaFormModal';
-import type { ArmadaUnit, ArmadaUnitInput, ArmadaUnitStatus } from '../../types/armada';
+import type {
+  ArmadaLokasi,
+  ArmadaMaintenanceRequest,
+  ArmadaP2HRecord,
+  ArmadaPelanggan,
+  ArmadaPerjalanan,
+  ArmadaPermintaanBarang,
+  ArmadaUnit,
+  ArmadaUnitInput,
+  ArmadaUnitStatus,
+} from '../../types/armada';
 import { formatDateShortID } from '../../utils/format';
 
 type DetailTabId = 'berkas' | 'perjalanan' | 'p2h' | 'perbaikan';
 
 interface UnitArmadaPageProps {
   units: ArmadaUnit[];
+  perjalananList?: ArmadaPerjalanan[];
+  p2hList?: ArmadaP2HRecord[];
+  maintenanceList?: ArmadaMaintenanceRequest[];
+  permintaanBarangList?: ArmadaPermintaanBarang[];
+  pelangganList?: ArmadaPelanggan[];
+  lokasiList?: ArmadaLokasi[];
   selectedUnitId: string | null;
   onSelectUnit: (id: string | null) => void;
   onSaveUnit: (input: ArmadaUnitInput) => ArmadaUnit;
   onToggleStatus: (unit: ArmadaUnit) => void;
+  onOpenPerjalanan?: (perjalananId: string) => void;
+  onOpenP2H?: (p2hId: string) => void;
+  onOpenMaintenance?: (maintenanceId: string) => void;
 }
 
 export function UnitArmadaPage({
   units,
+  perjalananList = [],
+  p2hList = [],
+  maintenanceList = [],
+  permintaanBarangList = [],
+  pelangganList = [],
+  lokasiList = [],
   selectedUnitId,
   onSelectUnit,
   onSaveUnit,
   onToggleStatus,
+  onOpenPerjalanan,
+  onOpenP2H,
+  onOpenMaintenance,
 }: UnitArmadaPageProps) {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<'ALL' | ArmadaUnitStatus>('ALL');
   const [jenisFilter, setJenisFilter] = useState('ALL');
   const [modalOpen, setModalOpen] = useState(false);
   const [editingUnit, setEditingUnit] = useState<ArmadaUnit | null>(null);
-  const [detailTab, setDetailTab] = useState<DetailTabId>('berkas');
+  const [detailTab, setDetailTab] = useState<DetailTabId>('perjalanan');
 
   const selectedUnit = useMemo(
     () => (selectedUnitId ? units.find((u) => u.id === selectedUnitId) || null : null),
     [selectedUnitId, units],
   );
+
+  const plgById = useMemo(() => new Map(pelangganList.map((p) => [p.id, p])), [pelangganList]);
+  const lokById = useMemo(() => new Map(lokasiList.map((l) => [l.id, l])), [lokasiList]);
 
   const jenisOptions = useMemo(
     () => [...new Set(units.map((u) => u.jenisKendaraan).filter(Boolean))].sort(),
@@ -103,44 +134,27 @@ export function UnitArmadaPage({
     const merekModel = [selectedUnit.merek, selectedUnit.model].filter(Boolean).join(' ') || '-';
     const isAktif = selectedUnit.status === 'Aktif';
 
+    const unitPerjalanan = perjalananList
+      .filter((p) => p.unitId === selectedUnit.id)
+      .sort((a, b) => b.tanggalMulai.localeCompare(a.tanggalMulai));
+    const unitP2H = p2hList
+      .filter((p) => p.unitId === selectedUnit.id)
+      .sort((a, b) => b.tanggalIsi.localeCompare(a.tanggalIsi));
+    const unitMaint = maintenanceList
+      .filter((m) => m.unitId === selectedUnit.id)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+
     const detailTabs: Array<{
       id: DetailTabId;
       label: string;
+      count?: number;
       icon: typeof FileText;
-      title: string;
-      desc: string;
     }> = [
-      {
-        id: 'berkas',
-        label: 'Berkas (STNK & KIR)',
-        icon: FileText,
-        title: `Berkas Kendaraan — ${selectedUnit.kodeUnit}`,
-        desc: 'Pencatatan masa berlaku STNK tahunan/5 tahunan, uji KIR berkala, dan izin angkut untuk unit ini akan ditampilkan di sini.',
-      },
-      {
-        id: 'perjalanan',
-        label: 'Riwayat Perjalanan',
-        icon: Route,
-        title: `Riwayat Perjalanan — ${selectedUnit.kodeUnit}`,
-        desc: 'Daftar surat jalan, rute pengiriman, supir bertugas, dan catatan tonase unit ini akan tercatat di bagian ini.',
-      },
-      {
-        id: 'p2h',
-        label: 'P2H',
-        icon: ClipboardCheck,
-        title: `Riwayat P2H (Pemeriksaan Harian) — ${selectedUnit.kodeUnit}`,
-        desc: 'Hasil formulir pemeriksaan harian kendaraan sebelum beroperasi (rem, ban, lampu, oli, kelengkapan safety) akan tersimpan di sini.',
-      },
-      {
-        id: 'perbaikan',
-        label: 'Perbaikan',
-        icon: Wrench,
-        title: `Riwayat Perbaikan & Servis — ${selectedUnit.kodeUnit}`,
-        desc: 'Pengajuan perbaikan, jadwal servis rutin, rincian penggantian suku cadang, dan status pengerjaan bengkel untuk unit ini akan tampil di sini.',
-      },
+      { id: 'berkas', label: 'Berkas (STNK & KIR)', icon: FileText },
+      { id: 'perjalanan', label: 'Riwayat Perjalanan', count: unitPerjalanan.length, icon: Route },
+      { id: 'p2h', label: 'P2H', count: unitP2H.length, icon: ClipboardCheck },
+      { id: 'perbaikan', label: 'Perbaikan', count: unitMaint.length, icon: Wrench },
     ];
-
-    const activeTabMeta = detailTabs.find((t) => t.id === detailTab) || detailTabs[0];
 
     return (
       <section className="space-y-5">
@@ -270,7 +284,9 @@ export function UnitArmadaPage({
             <div className="p-3 rounded-xl t-subtle border t-border">
               <div className="t-field-label">Tahun Pembuatan</div>
               <div className="font-mono-num font-semibold t-text mt-1">
-                {selectedUnit.tahun || <span className="t-muted font-normal font-sans">Belum diisi</span>}
+                {selectedUnit.tahun || (
+                  <span className="t-muted font-normal font-sans">Belum diisi</span>
+                )}
               </div>
             </div>
             <div className="p-3 rounded-xl t-subtle border t-border">
@@ -299,7 +315,7 @@ export function UnitArmadaPage({
           </div>
         </div>
 
-        {/* Future Module Hub Tabs: Berkas, Perjalanan, P2H, Perbaikan */}
+        {/* Connected Module Hub Tabs */}
         <div className="t-card rounded-2xl overflow-hidden">
           <div className="px-4 pt-3 border-b t-border flex flex-wrap items-center gap-1.5">
             {detailTabs.map((tab) => {
@@ -317,26 +333,192 @@ export function UnitArmadaPage({
                   }`}
                 >
                   <Icon className="w-3.5 h-3.5" />
-                  <span>{tab.label}</span>
+                  <span>
+                    {tab.label}
+                    {typeof tab.count === 'number' ? ` (${tab.count})` : ''}
+                  </span>
                 </button>
               );
             })}
           </div>
 
-          <div className="p-6 text-center space-y-2.5">
-            <div className="w-11 h-11 rounded-2xl t-subtle border t-border mx-auto flex items-center justify-center">
-              <activeTabMeta.icon className="w-5 h-5 t-link" />
+          {detailTab === 'berkas' && (
+            <div className="p-6 text-center space-y-2 text-xs">
+              <div className="font-bold t-text">Berkas Kendaraan — {selectedUnit.kodeUnit}</div>
+              <p className="t-muted max-w-lg mx-auto">
+                Pencatatan masa berlaku STNK tahunan/5 tahunan, uji KIR berkala, dan izin angkut
+                unit ini terhubung dengan identitas unit {selectedUnit.nomorPolisi}.
+              </p>
             </div>
-            <h4 className="text-sm font-bold t-text">{activeTabMeta.title}</h4>
-            <p className="text-xs t-muted max-w-lg mx-auto leading-relaxed">
-              {activeTabMeta.desc}
-            </p>
-            <div className="pt-1">
-              <span className="inline-block px-3 py-1 rounded-lg t-status-info text-[11px] font-semibold">
-                Siap terhubung saat modul diaktifkan
-              </span>
+          )}
+
+          {detailTab === 'perjalanan' && (
+            <div className="overflow-x-auto">
+              {unitPerjalanan.length === 0 ? (
+                <div className="p-6 text-center text-xs t-muted">
+                  Belum ada riwayat perjalanan untuk unit {selectedUnit.kodeUnit}.
+                </div>
+              ) : (
+                <table className="w-full text-left text-xs">
+                  <thead>
+                    <tr className="t-subtle border-b t-border">
+                      <th className="py-3 px-5 t-th-label">Penugasan</th>
+                      <th className="py-3 px-4 t-th-label">Jadwal</th>
+                      <th className="py-3 px-4 t-th-label">Pelanggan &amp; Rute</th>
+                      <th className="py-3 px-4 t-th-label">Sopir</th>
+                      <th className="py-3 px-5 t-th-label text-right">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y t-border">
+                    {unitPerjalanan.map((prj) => (
+                      <tr
+                        key={prj.id}
+                        onClick={() => onOpenPerjalanan?.(prj.id)}
+                        className="t-row-hover cursor-pointer"
+                      >
+                        <td className="py-3 px-5 font-mono-num font-bold t-link whitespace-nowrap">
+                          {prj.nomorPenugasan}
+                        </td>
+                        <td className="py-3 px-4 font-mono-num t-text whitespace-nowrap">
+                          {formatDateShortID(prj.tanggalMulai)} {prj.jamMulai}–{prj.jamSelesai}
+                        </td>
+                        <td className="py-3 px-4">
+                          <div className="font-semibold t-text">
+                            {plgById.get(prj.pelangganId)?.namaPt || '-'}
+                          </div>
+                          <div className="text-[11px] t-muted">
+                            {lokById.get(prj.lokasiMuatId)?.namaLokasi || '-'} &rarr;{' '}
+                            {lokById.get(prj.lokasiBongkarId)?.namaLokasi || '-'}
+                          </div>
+                        </td>
+                        <td className="py-3 px-4 t-text whitespace-nowrap">{prj.sopirNama}</td>
+                        <td className="py-3 px-5 text-right font-bold t-text whitespace-nowrap">
+                          {prj.status}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
             </div>
-          </div>
+          )}
+
+          {detailTab === 'p2h' && (
+            <div className="overflow-x-auto">
+              {unitP2H.length === 0 ? (
+                <div className="p-6 text-center text-xs t-muted">
+                  Belum ada riwayat P2H untuk unit {selectedUnit.kodeUnit}.
+                </div>
+              ) : (
+                <table className="w-full text-left text-xs">
+                  <thead>
+                    <tr className="t-subtle border-b t-border">
+                      <th className="py-3 px-5 t-th-label">No. P2H</th>
+                      <th className="py-3 px-4 t-th-label">Tanggal &amp; KM</th>
+                      <th className="py-3 px-4 t-th-label">Sopir</th>
+                      <th className="py-3 px-4 t-th-label">Temuan</th>
+                      <th className="py-3 px-5 t-th-label text-right">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y t-border">
+                    {unitP2H.map((rec) => (
+                      <tr
+                        key={rec.id}
+                        onClick={() => onOpenP2H?.(rec.id)}
+                        className="t-row-hover cursor-pointer"
+                      >
+                        <td className="py-3 px-5 font-mono-num font-bold t-link whitespace-nowrap">
+                          {rec.nomorP2H}
+                        </td>
+                        <td className="py-3 px-4 font-mono-num t-text whitespace-nowrap">
+                          {formatDateShortID(rec.tanggalIsi)} &middot;{' '}
+                          {rec.kilometer.toLocaleString('id-ID')} km
+                        </td>
+                        <td className="py-3 px-4 t-text whitespace-nowrap">{rec.sopirNama}</td>
+                        <td className="py-3 px-4 t-text">
+                          {rec.jumlahTemuan === 0
+                            ? 'Baik'
+                            : `${rec.jumlahTemuan} temuan${rec.adaTemuanKritis ? ' (Kritis)' : ''}`}
+                        </td>
+                        <td className="py-3 px-5 text-right font-bold t-text whitespace-nowrap">
+                          {rec.statusTinjauan}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          )}
+
+          {detailTab === 'perbaikan' && (
+            <div className="divide-y t-border text-xs">
+              {unitMaint.length === 0 ? (
+                <div className="p-6 text-center t-muted">
+                  Belum ada riwayat pengajuan perbaikan untuk unit {selectedUnit.kodeUnit}.
+                </div>
+              ) : (
+                unitMaint.map((m) => {
+                  const reqs = permintaanBarangList.filter((b) => b.maintenanceId === m.id);
+                  return (
+                    <div
+                      key={m.id}
+                      onClick={() => onOpenMaintenance?.(m.id)}
+                      className="p-4 t-row-hover cursor-pointer space-y-1.5"
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="font-bold">
+                          <span className="font-mono-num t-link">{m.nomorPengajuan}</span>
+                          <span className="t-muted ml-2">
+                            &middot; {formatDateShortID(m.tanggalDiajukan)} &middot; KM{' '}
+                            {m.kilometer.toLocaleString('id-ID')}
+                            {m.nomorP2H ? ` · ${m.nomorP2H}` : ''}
+                          </span>
+                        </div>
+                        <span className="font-bold t-text">{m.status}</span>
+                      </div>
+                      <div className="t-text">
+                        {m.itemTemuan ? <b>{m.itemTemuan}: </b> : null}
+                        {m.catatan}
+                      </div>
+                      {m.hasilPekerjaan && (
+                        <div className="text-[11px] t-muted">
+                          Hasil pekerjaan: {m.hasilPekerjaan}
+                        </div>
+                      )}
+                      {m.hasilPemeriksaanUlang && (
+                        <div
+                          className="text-[11px] font-semibold"
+                          style={{ color: 'var(--status-ok-text)' }}
+                        >
+                          Pemeriksaan ulang: {m.hasilPemeriksaanUlang}
+                          {m.penahananDilepas ? ' (Penahanan dilepas)' : ''}
+                        </div>
+                      )}
+                      {reqs.length > 0 && (
+                        <div className="text-[11px] t-link font-semibold">
+                          Permintaan barang:{' '}
+                          {reqs
+                            .map(
+                              (r) =>
+                                `${r.nomorPermintaan} (${r.status}: ${r.items
+                                  .map(
+                                    (it) =>
+                                      `${it.namaBarang} ${it.jumlahDiterima}/${
+                                        it.jumlahDisetujui || it.jumlahDiminta
+                                      }`,
+                                  )
+                                  .join(', ')})`,
+                            )
+                            .join(' | ')}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          )}
         </div>
 
         <UnitArmadaFormModal

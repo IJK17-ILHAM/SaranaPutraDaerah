@@ -5,9 +5,10 @@ import { loginWithSPS } from '../services/payrollApi';
 import { SPD_NAVY_GRADIENT, SpdLogoWordmark } from '../components/common/SpdLogo';
 import type { UserSession } from '../types/auth';
 import {
+  canAccessArmadaSession,
   getArmadaUrlFromPortal,
   getRequestedRedirectTarget,
-  isActiveSuperAdminSession,
+  isActiveSopirSession,
 } from '../utils/portalAuth';
 
 export function LoginPage() {
@@ -24,16 +25,20 @@ export function LoginPage() {
   const completeSignIn = (loggedUser: UserSession, welcomeMessage: string, toastKind: 'success' | 'info') => {
     loginUser(loggedUser);
     if (isArmadaRedirect) {
-      if (isActiveSuperAdminSession(loggedUser)) {
+      if (canAccessArmadaSession(loggedUser)) {
         window.location.replace(getArmadaUrlFromPortal());
         return;
       }
       const cleanUrl = `${window.location.pathname}${window.location.hash}`;
       window.history.replaceState({}, '', cleanUrl);
       showToast(
-        'Dashboard Armada khusus untuk role Super Admin. Anda diarahkan ke Portal Utama.',
+        'Akses /armada/ khusus untuk role Super Admin atau Sopir. Anda diarahkan ke Portal Utama.',
         'warning',
       );
+      return;
+    }
+    if (isActiveSopirSession(loggedUser)) {
+      window.location.replace(getArmadaUrlFromPortal());
       return;
     }
     showToast(welcomeMessage, toastKind);
@@ -72,6 +77,21 @@ export function LoginPage() {
         isDemo: true,
       },
       'Masuk dengan sesi Preview Admin. Data tetap disinkronkan dari SPS.',
+      'info',
+    );
+  };
+
+  const handleSopirDemoLogin = () => {
+    completeSignIn(
+      {
+        id: 'DEMO-SOPIR-01',
+        nama: 'Dedi Kurniawan',
+        username: 'dedi.sopir',
+        role: 'Sopir',
+        status: 'Aktif',
+        isDemo: true,
+      },
+      'Masuk sebagai Sopir (Dedi Kurniawan — ARM-001).',
       'info',
     );
   };
@@ -116,7 +136,7 @@ export function LoginPage() {
             <div className="mb-4 p-3 rounded-xl t-status-info text-xs font-medium flex items-start gap-2">
               <Truck className="w-4 h-4 shrink-0 mt-0.5" />
               <span>
-                Masuk dengan akun <b>Super Admin</b> untuk langsung kembali ke{' '}
+                Masuk dengan akun <b>Super Admin</b> atau <b>Sopir</b> untuk langsung kembali ke{' '}
                 <b>Sistem Operasional dan Pemantauan Armada</b>.
               </span>
             </div>
@@ -205,7 +225,14 @@ export function LoginPage() {
               onClick={handleDemoLogin}
               className="w-full py-2.5 rounded-xl t-btn-secondary text-xs font-semibold"
             >
-              Masuk Mode Preview Dashboard
+              Masuk Mode Preview Admin (Super Admin)
+            </button>
+            <button
+              type="button"
+              onClick={handleSopirDemoLogin}
+              className="w-full py-2.5 rounded-xl t-btn-secondary text-xs font-semibold"
+            >
+              Masuk Mode Preview Sopir (Dedi Kurniawan · ARM-001)
             </button>
           </div>
         </div>

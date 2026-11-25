@@ -7,9 +7,10 @@ import { SlipModal } from './components/payroll/SlipModal';
 import { PrintPortal } from './components/print/PrintPortal';
 import { AppProvider, useApp } from './context/AppContext';
 import {
+  canAccessArmadaSession,
   getArmadaUrlFromPortal,
   getRequestedRedirectTarget,
-  isActiveSuperAdminSession,
+  isActiveSopirSession,
 } from './utils/portalAuth';
 import { KasTonaseProvider } from './context/KasTonaseContext';
 import { PayrollProvider } from './context/PayrollContext';
@@ -71,14 +72,18 @@ function PortalShell() {
 
   useEffect(() => {
     if (!user) return;
-    if (getRequestedRedirectTarget() !== 'armada') return;
-
-    if (isActiveSuperAdminSession(user)) {
+    if (getRequestedRedirectTarget() === 'armada') {
+      if (canAccessArmadaSession(user)) {
+        window.location.replace(getArmadaUrlFromPortal());
+      } else {
+        const cleanUrl = `${window.location.pathname}${window.location.hash}`;
+        window.history.replaceState({}, '', cleanUrl);
+        showToast('Akses Armada khusus untuk role Super Admin atau Sopir.', 'warning');
+      }
+      return;
+    }
+    if (isActiveSopirSession(user)) {
       window.location.replace(getArmadaUrlFromPortal());
-    } else {
-      const cleanUrl = `${window.location.pathname}${window.location.hash}`;
-      window.history.replaceState({}, '', cleanUrl);
-      showToast('Akses Dashboard Armada khusus untuk role Super Admin.', 'warning');
     }
   }, [showToast, user]);
 

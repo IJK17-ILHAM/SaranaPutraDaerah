@@ -1,40 +1,111 @@
 import {
+  AlertTriangle,
   ArrowLeft,
+  Banknote,
+  Building2,
   CheckCircle2,
-  ChevronRight,
+  ClipboardCheck,
   Clock,
   Database,
-  Info,
+  FileSpreadsheet,
+  KeyRound,
   LayoutDashboard,
   LogOut,
   MapPin,
   Menu,
+  Package,
   Palette,
+  Route,
   Search,
   ShieldAlert,
   ShieldCheck,
+  Smartphone,
   Truck,
+  Upload,
+  Wallet,
   Wrench,
   X,
 } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { SPD_NAVY_GRADIENT, SpdLogoWordmark } from '../../components/common/SpdLogo';
 import { STORAGE_KEYS, type ThemeId } from '../../config/constants';
-import { loadStoredArmadaUnits, saveStoredArmadaUnits } from '../../data/armadaSeed';
+import {
+  computePermintaanBarangStatus,
+  generateNextArmadaCode,
+  loadStoredArmadaKendala,
+  loadStoredArmadaLokasi,
+  loadStoredArmadaMaintenance,
+  loadStoredArmadaP2H,
+  loadStoredArmadaPelanggan,
+  loadStoredArmadaPerjalanan,
+  loadStoredArmadaPermintaanBarang,
+  loadStoredArmadaSewa,
+  loadStoredArmadaTarif,
+  loadStoredArmadaUangJalan,
+  loadStoredArmadaUnits,
+  saveStoredArmadaKendala,
+  saveStoredArmadaLokasi,
+  saveStoredArmadaMaintenance,
+  saveStoredArmadaP2H,
+  saveStoredArmadaPelanggan,
+  saveStoredArmadaPerjalanan,
+  saveStoredArmadaPermintaanBarang,
+  saveStoredArmadaSewa,
+  saveStoredArmadaTarif,
+  saveStoredArmadaUangJalan,
+  saveStoredArmadaUnits,
+} from '../../data/armadaSeed';
 import type {
+  ArmadaKendalaKategori,
+  ArmadaKendalaReport,
+  ArmadaLokasi,
+  ArmadaLokasiInput,
+  ArmadaMaintenanceRequest,
   ArmadaMenuId,
   ArmadaOperationalStatus,
+  ArmadaP2HRecord,
+  ArmadaPelanggan,
+  ArmadaPelangganInput,
+  ArmadaPerjalanan,
+  ArmadaPerjalananInput,
+  ArmadaPermintaanBarang,
+  ArmadaSewaUnit,
+  ArmadaTarif,
+  ArmadaTarifInput,
+  ArmadaUangJalan,
   ArmadaUnit,
   ArmadaUnitInput,
+  MaintenancePriority,
+  P2HChecklistItem,
+  PermintaanBarangItem,
+  UangJalanExpenseItem,
 } from '../../types/armada';
 import type { UserSession } from '../../types/auth';
 import {
+  isSewaOverdue,
+  recordArmadaKasTonaseTransaction,
+} from '../../utils/armadaSchedule';
+import {
+  exportSpsArmadaWorkbook,
+  importSpsArmadaWorkbook,
+} from '../../utils/armadaSpreadsheet';
+import { getTodayISO } from '../../utils/format';
+import {
+  canAccessArmadaSession,
   clearStoredUserSession,
   getPortalBaseUrlFromArmada,
   getPortalLoginUrlFromArmada,
-  isActiveSuperAdminSession,
+  isActiveSopirSession,
   readStoredUserSession,
 } from '../../utils/portalAuth';
+import { LokasiPage } from './LokasiPage';
+import { HasilP2HPage, MaintenancePage, PermintaanBarangPage } from './P2HMaintenancePage';
+import { PelangganPage } from './PelangganPage';
+import { PerjalananPage } from './PerjalananPage';
+import { SewaUnitPage } from './SewaUnitPage';
+import { TarifPage } from './TarifPage';
+import { TugasSayaSopirPage } from './TugasSayaSopirPage';
+import { UangJalanPage } from './UangJalanPage';
 import { UnitArmadaPage } from './UnitArmadaPage';
 
 const THEME_ORDER: ThemeId[] = ['spd', 'eco', 'dark'];
@@ -42,6 +113,21 @@ const THEME_LABELS: Record<ThemeId, string> = {
   spd: 'Soft UI',
   eco: 'Hijau',
   dark: 'Gelap',
+};
+
+const MENU_TITLE_MAP: Record<ArmadaMenuId, string> = {
+  'armada-dashboard': 'Dashboard Armada',
+  'armada-tugas-saya': 'Mode Sopir — Tugas Saya',
+  'armada-perjalanan': 'Perjalanan & Sewa → Perjalanan',
+  'armada-uang-jalan': 'Perjalanan & Sewa → Uang Jalan',
+  'armada-sewa-unit': 'Perjalanan & Sewa → Sewa Unit',
+  'armada-hasil-p2h': 'P2H Kendaraan → Hasil P2H',
+  'armada-maintenance': 'Maintenance → Pengajuan Perbaikan',
+  'armada-permintaan-barang': 'Maintenance → Permintaan Barang',
+  'armada-master-unit': 'Master Data → Unit Armada',
+  'armada-master-pelanggan': 'Master Data → Pelanggan',
+  'armada-master-lokasi': 'Master Data → Lokasi Muat–Bongkar',
+  'armada-master-tarif': 'Master Data → Tarif',
 };
 
 export function ArmadaDashboardPage() {
@@ -54,9 +140,42 @@ export function ArmadaDashboardPage() {
   const [activeMenu, setActiveMenu] = useState<ArmadaMenuId>('armada-dashboard');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
+  // Core persisted Armada state
   const [units, setUnits] = useState<ArmadaUnit[]>(() => loadStoredArmadaUnits());
+  const [pelanggan, setPelanggan] = useState<ArmadaPelanggan[]>(() => loadStoredArmadaPelanggan());
+  const [lokasi, setLokasi] = useState<ArmadaLokasi[]>(() => loadStoredArmadaLokasi());
+  const [tarif, setTarif] = useState<ArmadaTarif[]>(() => loadStoredArmadaTarif());
+  const [perjalanan, setPerjalanan] = useState<ArmadaPerjalanan[]>(() =>
+    loadStoredArmadaPerjalanan(),
+  );
+  const [uangJalan, setUangJalan] = useState<ArmadaUangJalan[]>(() =>
+    loadStoredArmadaUangJalan(),
+  );
+  const [sewaList, setSewaList] = useState<ArmadaSewaUnit[]>(() => loadStoredArmadaSewa());
+  const [p2hList, setP2hList] = useState<ArmadaP2HRecord[]>(() => loadStoredArmadaP2H());
+  const [maintenanceList, setMaintenanceList] = useState<ArmadaMaintenanceRequest[]>(() =>
+    loadStoredArmadaMaintenance(),
+  );
+  const [permintaanBarang, setPermintaanBarang] = useState<ArmadaPermintaanBarang[]>(() =>
+    loadStoredArmadaPermintaanBarang(),
+  );
+  const [kendalaList, setKendalaList] = useState<ArmadaKendalaReport[]>(() =>
+    loadStoredArmadaKendala(),
+  );
+
+  // Cross-navigation selection states
   const [selectedUnitId, setSelectedUnitId] = useState<string | null>(null);
+  const [selectedPerjalananId, setSelectedPerjalananId] = useState<string | null>(null);
+  const [selectedUangJalanId, setSelectedUangJalanId] = useState<string | null>(null);
+  const [selectedP2HId, setSelectedP2HId] = useState<string | null>(null);
+  const [selectedMaintenanceId, setSelectedMaintenanceId] = useState<string | null>(null);
+  const [lokasiFilterPlgId, setLokasiFilterPlgId] = useState<string>('ALL');
+  const [lokasiAutoOpen, setLokasiAutoOpen] = useState(false);
+  const [tarifFilterPlgId, setTarifFilterPlgId] = useState<string>('ALL');
+  const [tarifAutoOpen, setTarifAutoOpen] = useState(false);
+
   const [toastMsg, setToastMsg] = useState<string | null>(null);
+  const spsInputRef = useRef<HTMLInputElement | null>(null);
 
   // Dashboard filters
   const [search, setSearch] = useState('');
@@ -67,28 +186,33 @@ export function ArmadaDashboardPage() {
     localStorage.setItem(STORAGE_KEYS.THEME, theme);
   }, [theme]);
 
-  // Redirect unauthenticated visitors directly to Portal SPD login with safe return flag
   useEffect(() => {
     if (!session) {
       window.location.replace(getPortalLoginUrlFromArmada());
     }
   }, [session]);
 
-  // Sync logout/login/units/theme events across tabs
+  // Cross-tab storage sync
   useEffect(() => {
     const handleStorage = (e: StorageEvent) => {
-      if (e.key === STORAGE_KEYS.USER) {
-        setSession(readStoredUserSession());
-      }
+      if (e.key === STORAGE_KEYS.USER) setSession(readStoredUserSession());
       if (e.key === STORAGE_KEYS.THEME) {
         const next = localStorage.getItem(STORAGE_KEYS.THEME);
-        if (next === 'eco' || next === 'dark' || next === 'spd') {
-          setTheme(next);
-        }
+        if (next === 'eco' || next === 'dark' || next === 'spd') setTheme(next);
       }
-      if (e.key === STORAGE_KEYS.ARMADA_UNITS) {
-        setUnits(loadStoredArmadaUnits());
-      }
+      if (e.key === STORAGE_KEYS.ARMADA_UNITS) setUnits(loadStoredArmadaUnits());
+      if (e.key === STORAGE_KEYS.ARMADA_PELANGGAN) setPelanggan(loadStoredArmadaPelanggan());
+      if (e.key === STORAGE_KEYS.ARMADA_LOKASI) setLokasi(loadStoredArmadaLokasi());
+      if (e.key === STORAGE_KEYS.ARMADA_TARIF) setTarif(loadStoredArmadaTarif());
+      if (e.key === STORAGE_KEYS.ARMADA_PERJALANAN) setPerjalanan(loadStoredArmadaPerjalanan());
+      if (e.key === STORAGE_KEYS.ARMADA_UANG_JALAN) setUangJalan(loadStoredArmadaUangJalan());
+      if (e.key === STORAGE_KEYS.ARMADA_SEWA) setSewaList(loadStoredArmadaSewa());
+      if (e.key === STORAGE_KEYS.ARMADA_P2H) setP2hList(loadStoredArmadaP2H());
+      if (e.key === STORAGE_KEYS.ARMADA_MAINTENANCE)
+        setMaintenanceList(loadStoredArmadaMaintenance());
+      if (e.key === STORAGE_KEYS.ARMADA_PERMINTAAN_BARANG)
+        setPermintaanBarang(loadStoredArmadaPermintaanBarang());
+      if (e.key === STORAGE_KEYS.ARMADA_KENDALA) setKendalaList(loadStoredArmadaKendala());
     };
     window.addEventListener('storage', handleStorage);
     return () => window.removeEventListener('storage', handleStorage);
@@ -98,13 +222,17 @@ export function ArmadaDashboardPage() {
     setToastMsg(message);
     window.setTimeout(() => {
       setToastMsg((curr) => (curr === message ? null : curr));
-    }, 3600);
+    }, 4000);
   };
 
+  const actorName = session?.nama || session?.username || session?.email || 'Admin Armada';
+
+  // ==========================================
+  // MASTER DATA HANDLERS
+  // ==========================================
   const handleSaveUnit = (input: ArmadaUnitInput): ArmadaUnit => {
     const now = new Date().toISOString();
     let savedUnit: ArmadaUnit | null = null;
-
     setUnits((prev) => {
       let next: ArmadaUnit[];
       if (input.id) {
@@ -162,13 +290,11 @@ export function ArmadaDashboardPage() {
       saveStoredArmadaUnits(next);
       return next;
     });
-
     notify(
       input.id
-        ? `Perubahan unit ${input.kodeUnit} (${input.nomorPolisi}) disimpan.`
-        : `Unit baru ${input.kodeUnit} (${input.nomorPolisi}) berhasil ditambahkan.`,
+        ? `Perubahan unit ${input.kodeUnit} disimpan.`
+        : `Unit baru ${input.kodeUnit} ditambahkan.`,
     );
-
     return (
       savedUnit || {
         id: input.id || `UNIT-${Date.now()}`,
@@ -188,7 +314,7 @@ export function ArmadaDashboardPage() {
     );
   };
 
-  const handleToggleStatus = (unit: ArmadaUnit) => {
+  const handleToggleUnitStatus = (unit: ArmadaUnit) => {
     const nextStatus = unit.status === 'Aktif' ? 'Nonaktif' : 'Aktif';
     const now = new Date().toISOString();
     setUnits((prev) => {
@@ -208,15 +334,1062 @@ export function ArmadaDashboardPage() {
     notify(`Status unit ${unit.kodeUnit} diubah menjadi ${nextStatus}.`);
   };
 
+  const handleSavePelanggan = (input: ArmadaPelangganInput): ArmadaPelanggan => {
+    const now = new Date().toISOString();
+    let saved: ArmadaPelanggan | null = null;
+    setPelanggan((prev) => {
+      let next: ArmadaPelanggan[];
+      if (input.id) {
+        next = prev.map((p) => {
+          if (p.id !== input.id) return p;
+          const updated: ArmadaPelanggan = {
+            ...p,
+            idPelanggan: input.idPelanggan,
+            namaPt: input.namaPt,
+            pic: input.pic,
+            kontak: input.kontak,
+            status: input.status,
+            catatan: input.catatan || '',
+            updatedAt: now,
+          };
+          saved = updated;
+          return updated;
+        });
+      } else {
+        const created: ArmadaPelanggan = {
+          id: `PLG-${Date.now()}-${Math.random().toString(36).slice(2, 5).toUpperCase()}`,
+          idPelanggan: input.idPelanggan,
+          namaPt: input.namaPt,
+          pic: input.pic,
+          kontak: input.kontak,
+          status: input.status,
+          catatan: input.catatan || '',
+          createdAt: now,
+          updatedAt: now,
+        };
+        saved = created;
+        next = [created, ...prev];
+      }
+      saveStoredArmadaPelanggan(next);
+      return next;
+    });
+    notify(`Data pelanggan ${input.namaPt} disimpan.`);
+    return (
+      saved || {
+        id: input.id || `PLG-${Date.now()}`,
+        idPelanggan: input.idPelanggan,
+        namaPt: input.namaPt,
+        pic: input.pic,
+        kontak: input.kontak,
+        status: input.status,
+        createdAt: now,
+        updatedAt: now,
+      }
+    );
+  };
+
+  const handleTogglePelangganStatus = (item: ArmadaPelanggan) => {
+    const nextStatus = item.status === 'Aktif' ? 'Nonaktif' : 'Aktif';
+    const now = new Date().toISOString();
+    setPelanggan((prev) => {
+      const next = prev.map((p) =>
+        p.id === item.id ? { ...p, status: nextStatus as 'Aktif' | 'Nonaktif', updatedAt: now } : p,
+      );
+      saveStoredArmadaPelanggan(next);
+      return next;
+    });
+    notify(`Status pelanggan ${item.namaPt} diubah menjadi ${nextStatus}.`);
+  };
+
+  const handleSaveLokasi = (input: ArmadaLokasiInput): ArmadaLokasi => {
+    const now = new Date().toISOString();
+    let saved: ArmadaLokasi | null = null;
+    setLokasi((prev) => {
+      let next: ArmadaLokasi[];
+      if (input.id) {
+        next = prev.map((l) => {
+          if (l.id !== input.id) return l;
+          const updated: ArmadaLokasi = {
+            ...l,
+            idLokasi: input.idLokasi,
+            pelangganId: input.pelangganId,
+            namaLokasi: input.namaLokasi,
+            alamatLengkap: input.alamatLengkap,
+            jenisLokasi: input.jenisLokasi,
+            status: input.status,
+            catatan: input.catatan || '',
+            updatedAt: now,
+          };
+          saved = updated;
+          return updated;
+        });
+      } else {
+        const created: ArmadaLokasi = {
+          id: `LOK-${Date.now()}-${Math.random().toString(36).slice(2, 5).toUpperCase()}`,
+          idLokasi: input.idLokasi,
+          pelangganId: input.pelangganId,
+          namaLokasi: input.namaLokasi,
+          alamatLengkap: input.alamatLengkap,
+          jenisLokasi: input.jenisLokasi,
+          status: input.status,
+          catatan: input.catatan || '',
+          createdAt: now,
+          updatedAt: now,
+        };
+        saved = created;
+        next = [created, ...prev];
+      }
+      saveStoredArmadaLokasi(next);
+      return next;
+    });
+    notify(`Lokasi ${input.namaLokasi} (${input.jenisLokasi}) disimpan.`);
+    return (
+      saved || {
+        id: input.id || `LOK-${Date.now()}`,
+        idLokasi: input.idLokasi,
+        pelangganId: input.pelangganId,
+        namaLokasi: input.namaLokasi,
+        alamatLengkap: input.alamatLengkap,
+        jenisLokasi: input.jenisLokasi,
+        status: input.status,
+        createdAt: now,
+        updatedAt: now,
+      }
+    );
+  };
+
+  const handleToggleLokasiStatus = (item: ArmadaLokasi) => {
+    const nextStatus = item.status === 'Aktif' ? 'Nonaktif' : 'Aktif';
+    const now = new Date().toISOString();
+    setLokasi((prev) => {
+      const next = prev.map((l) =>
+        l.id === item.id ? { ...l, status: nextStatus as 'Aktif' | 'Nonaktif', updatedAt: now } : l,
+      );
+      saveStoredArmadaLokasi(next);
+      return next;
+    });
+    notify(`Status lokasi ${item.namaLokasi} diubah menjadi ${nextStatus}.`);
+  };
+
+  const handleSaveTarif = (input: ArmadaTarifInput): ArmadaTarif => {
+    const now = new Date().toISOString();
+    let saved: ArmadaTarif | null = null;
+    setTarif((prev) => {
+      let next: ArmadaTarif[];
+      if (input.id) {
+        next = prev.map((t) => {
+          if (t.id !== input.id) return t;
+          const updated: ArmadaTarif = {
+            ...t,
+            idTarif: input.idTarif || t.idTarif,
+            pelangganId: input.pelangganId,
+            lokasiMuatId: input.lokasiMuatId,
+            lokasiBongkarId: input.lokasiBongkarId,
+            jenisKendaraan: input.jenisKendaraan,
+            dasarTarif: input.dasarTarif,
+            nominal: input.nominal,
+            tanggalMulaiBerlaku: input.tanggalMulaiBerlaku,
+            status: input.status,
+            catatan: input.catatan || '',
+            updatedAt: now,
+          };
+          saved = updated;
+          return updated;
+        });
+      } else {
+        const code =
+          input.idTarif ||
+          generateNextArmadaCode(
+            'TRF',
+            prev.map((t) => t.idTarif),
+          );
+        const created: ArmadaTarif = {
+          id: `TRF-${Date.now()}-${Math.random().toString(36).slice(2, 5).toUpperCase()}`,
+          idTarif: code,
+          pelangganId: input.pelangganId,
+          lokasiMuatId: input.lokasiMuatId,
+          lokasiBongkarId: input.lokasiBongkarId,
+          jenisKendaraan: input.jenisKendaraan,
+          dasarTarif: input.dasarTarif,
+          nominal: input.nominal,
+          tanggalMulaiBerlaku: input.tanggalMulaiBerlaku,
+          status: input.status,
+          catatan: input.catatan || '',
+          createdAt: now,
+          updatedAt: now,
+        };
+        saved = created;
+        next = [created, ...prev];
+      }
+      saveStoredArmadaTarif(next);
+      return next;
+    });
+    notify(`Tarif ${input.jenisKendaraan} (${input.dasarTarif}) disimpan.`);
+    return (
+      saved || {
+        id: input.id || `TRF-${Date.now()}`,
+        idTarif: input.idTarif || 'TRF',
+        pelangganId: input.pelangganId,
+        lokasiMuatId: input.lokasiMuatId,
+        lokasiBongkarId: input.lokasiBongkarId,
+        jenisKendaraan: input.jenisKendaraan,
+        dasarTarif: input.dasarTarif,
+        nominal: input.nominal,
+        tanggalMulaiBerlaku: input.tanggalMulaiBerlaku,
+        status: input.status,
+        createdAt: now,
+        updatedAt: now,
+      }
+    );
+  };
+
+  const handleToggleTarifStatus = (item: ArmadaTarif) => {
+    const nextStatus = item.status === 'Aktif' ? 'Nonaktif' : 'Aktif';
+    const now = new Date().toISOString();
+    setTarif((prev) => {
+      const next = prev.map((t) =>
+        t.id === item.id ? { ...t, status: nextStatus as 'Aktif' | 'Nonaktif', updatedAt: now } : t,
+      );
+      saveStoredArmadaTarif(next);
+      return next;
+    });
+    notify(`Status tarif ${item.idTarif} diubah menjadi ${nextStatus}.`);
+  };
+
+  // ==========================================
+  // PERJALANAN & UANG JALAN HANDLERS
+  // ==========================================
+  const handleSavePerjalanan = (input: ArmadaPerjalananInput): ArmadaPerjalanan => {
+    const now = new Date().toISOString();
+    const num =
+      input.nomorPenugasan ||
+      generateNextArmadaCode(
+        'PRJ',
+        perjalanan.map((p) => p.nomorPenugasan),
+      );
+    const seqNum = num.replace(/\D/g, '') || '001';
+    const created: ArmadaPerjalanan = {
+      id: `PRJ-${Date.now()}-${Math.random().toString(36).slice(2, 5).toUpperCase()}`,
+      nomorPenugasan: num,
+      nomorSuratJalan: `SJ/SPD/${new Date().getFullYear()}/${seqNum}`,
+      unitId: input.unitId,
+      sopirNama: input.sopirNama,
+      pelangganId: input.pelangganId,
+      lokasiMuatId: input.lokasiMuatId,
+      lokasiBongkarId: input.lokasiBongkarId,
+      tarifId: input.tarifId,
+      dasarTarif: input.dasarTarif,
+      nominalTarif: input.nominalTarif,
+      tanggalMulai: input.tanggalMulai,
+      jamMulai: input.jamMulai,
+      tanggalSelesai: input.tanggalSelesai,
+      jamSelesai: input.jamSelesai,
+      status: 'Dijadwalkan',
+      tahapPerjalanan: 'Belum Mulai',
+      catatan: input.catatan || '',
+      createdAt: now,
+      updatedAt: now,
+    };
+    setPerjalanan((prev) => {
+      const next = [created, ...prev];
+      saveStoredArmadaPerjalanan(next);
+      return next;
+    });
+    notify(`Perjalanan ${created.nomorPenugasan} berhasil dijadwalkan.`);
+    return created;
+  };
+
+  const handleStartPerjalanan = (prj: ArmadaPerjalanan) => {
+    const now = new Date().toISOString();
+    setPerjalanan((prev) => {
+      const next = prev.map((p) =>
+        p.id === prj.id
+          ? {
+              ...p,
+              status: 'Berjalan' as const,
+              tahapPerjalanan: 'Menuju Muat' as const,
+              mulaiAktual: now,
+              updatedAt: now,
+            }
+          : p,
+      );
+      saveStoredArmadaPerjalanan(next);
+      return next;
+    });
+    notify(`Perjalanan ${prj.nomorPenugasan} dimulai.`);
+  };
+
+  const handleMarkSelesaiMuat = (prj: ArmadaPerjalanan) => {
+    const now = new Date().toISOString();
+    setPerjalanan((prev) => {
+      const next = prev.map((p) =>
+        p.id === prj.id
+          ? {
+              ...p,
+              status: 'Berjalan' as const,
+              tahapPerjalanan: 'Selesai Muat' as const,
+              selesaiMuatAktual: now,
+              updatedAt: now,
+            }
+          : p,
+      );
+      saveStoredArmadaPerjalanan(next);
+      return next;
+    });
+    notify(`Tahap Selesai Muat dicatat untuk ${prj.nomorPenugasan}.`);
+  };
+
+  const handleMarkSelesaiBongkar = (params: {
+    perjalananId: string;
+    buktiBongkarDataUrl?: string;
+    buktiBongkarNama?: string;
+  }) => {
+    const now = new Date().toISOString();
+    setPerjalanan((prev) => {
+      const next = prev.map((p) =>
+        p.id === params.perjalananId
+          ? {
+              ...p,
+              status: 'Selesai' as const,
+              tahapPerjalanan: 'Selesai Bongkar' as const,
+              selesaiBongkarAktual: now,
+              selesaiAktual: now,
+              buktiBongkarDataUrl: params.buktiBongkarDataUrl || p.buktiBongkarDataUrl,
+              buktiBongkarNama: params.buktiBongkarNama || p.buktiBongkarNama,
+              updatedAt: now,
+            }
+          : p,
+      );
+      saveStoredArmadaPerjalanan(next);
+      return next;
+    });
+    notify('Selesai Bongkar tercatat. Perjalanan selesai.');
+  };
+
+  const handleCompletePerjalanan = (prj: ArmadaPerjalanan) => {
+    handleMarkSelesaiBongkar({ perjalananId: prj.id });
+  };
+
+  const handleCreateUangJalan = (params: {
+    perjalananId: string;
+    nominalDiajukan: number;
+    keperluan: string;
+  }): ArmadaUangJalan => {
+    const now = new Date().toISOString();
+    const nomor = generateNextArmadaCode(
+      'UJ',
+      uangJalan.map((u) => u.nomorUangJalan),
+    );
+    const created: ArmadaUangJalan = {
+      id: `UJ-${Date.now()}-${Math.random().toString(36).slice(2, 5).toUpperCase()}`,
+      nomorUangJalan: nomor,
+      perjalananId: params.perjalananId,
+      status: 'Diajukan',
+      nominalDiajukan: params.nominalDiajukan,
+      keperluan: params.keperluan,
+      diajukanOleh: actorName,
+      tanggalDiajukan: getTodayISO(),
+      rincianPengeluaran: [],
+      totalPengeluaran: 0,
+      createdAt: now,
+      updatedAt: now,
+    };
+    setUangJalan((prev) => {
+      const next = [created, ...prev];
+      saveStoredArmadaUangJalan(next);
+      return next;
+    });
+    notify(`Pengajuan Uang Jalan ${created.nomorUangJalan} dibuat.`);
+    return created;
+  };
+
+  const handleDisburseUangJalan = (params: {
+    id: string;
+    nominalDicairkan: number;
+    tanggalPencairan: string;
+    metodePencairan: 'Tunai' | 'Transfer';
+    buktiPencairanDataUrl?: string;
+    buktiPencairanNama?: string;
+  }) => {
+    const now = new Date().toISOString();
+    const target = uangJalan.find((u) => u.id === params.id);
+    const prj = target ? perjalanan.find((p) => p.id === target.perjalananId) : undefined;
+    const unit = prj ? units.find((u) => u.id === prj.unitId) : undefined;
+
+    // Record real cash outflow in Kas & Tonase!
+    const kasEntry = recordArmadaKasTonaseTransaction({
+      tanggal: params.tanggalPencairan,
+      jenis: 'Keluar',
+      ket: `Pencairan Uang Jalan ${target?.nomorUangJalan || ''} (${
+        prj?.nomorPenugasan || '-'
+      } · ${unit?.kodeUnit || '-'})`,
+      nominal: params.nominalDicairkan,
+      metode: params.metodePencairan,
+      mitra: prj?.sopirNama || 'Sopir Armada',
+      diinputOleh: actorName,
+    });
+
+    setUangJalan((prev) => {
+      const next = prev.map((u) =>
+        u.id === params.id
+          ? {
+              ...u,
+              status: 'Dicairkan' as const,
+              nominalDicairkan: params.nominalDicairkan,
+              tanggalPencairan: params.tanggalPencairan,
+              metodePencairan: params.metodePencairan,
+              buktiPencairanDataUrl: params.buktiPencairanDataUrl,
+              buktiPencairanNama: params.buktiPencairanNama,
+              dicairkanOleh: actorName,
+              kasOpsPencairanId: kasEntry.id,
+              updatedAt: now,
+            }
+          : u,
+      );
+      saveStoredArmadaUangJalan(next);
+      return next;
+    });
+    notify(
+      `Uang Jalan ${target?.nomorUangJalan || ''} dicairkan & otomatis dicatat di Kas & Tonase.`,
+    );
+  };
+
+  const handleSubmitPertanggungjawaban = (params: {
+    id: string;
+    rincianPengeluaran: UangJalanExpenseItem[];
+    catatanPertanggungjawaban: string;
+  }) => {
+    const now = new Date().toISOString();
+    const total = params.rincianPengeluaran.reduce((s, it) => s + (it.nominal || 0), 0);
+    setUangJalan((prev) => {
+      const next = prev.map((u) =>
+        u.id === params.id
+          ? {
+              ...u,
+              status: 'Dipertanggungjawabkan' as const,
+              rincianPengeluaran: params.rincianPengeluaran,
+              totalPengeluaran: total,
+              tanggalPertanggungjawaban: getTodayISO(),
+              dipertanggungjawabkanOleh: actorName,
+              catatanPertanggungjawaban: params.catatanPertanggungjawaban,
+              updatedAt: now,
+            }
+          : u,
+      );
+      saveStoredArmadaUangJalan(next);
+      return next;
+    });
+    notify('Pertanggungjawaban pengeluaran uang jalan berhasil disimpan.');
+  };
+
+  const handleVerifyFinishUangJalan = (params: {
+    id: string;
+    tanggalPenyelesaian: string;
+    metodePenyelesaian: 'Tunai' | 'Transfer';
+    catatanVerifikasi: string;
+  }) => {
+    const now = new Date().toISOString();
+    const target = uangJalan.find((u) => u.id === params.id);
+    if (!target) return;
+    const prj = perjalanan.find((p) => p.id === target.perjalananId);
+    const selisih = (target.nominalDicairkan || 0) - target.totalPengeluaran;
+
+    let kasSettleId: string | undefined;
+    let statusPenyelesaian: 'Pas' | 'Sisa Dikembalikan' | 'Kekurangan Dibayarkan' = 'Pas';
+
+    if (selisih > 0) {
+      statusPenyelesaian = 'Sisa Dikembalikan';
+      const kasEntry = recordArmadaKasTonaseTransaction({
+        tanggal: params.tanggalPenyelesaian,
+        jenis: 'Masuk',
+        ket: `Pengembalian sisa Uang Jalan ${target.nomorUangJalan} (${
+          prj?.nomorPenugasan || '-'
+        })`,
+        nominal: selisih,
+        metode: params.metodePenyelesaian,
+        mitra: prj?.sopirNama || 'Sopir Armada',
+        diinputOleh: actorName,
+      });
+      kasSettleId = kasEntry.id;
+    } else if (selisih < 0) {
+      statusPenyelesaian = 'Kekurangan Dibayarkan';
+      const kasEntry = recordArmadaKasTonaseTransaction({
+        tanggal: params.tanggalPenyelesaian,
+        jenis: 'Keluar',
+        ket: `Pembayaran kekurangan Uang Jalan ${target.nomorUangJalan} (${
+          prj?.nomorPenugasan || '-'
+        })`,
+        nominal: Math.abs(selisih),
+        metode: params.metodePenyelesaian,
+        mitra: prj?.sopirNama || 'Sopir Armada',
+        diinputOleh: actorName,
+      });
+      kasSettleId = kasEntry.id;
+    }
+
+    setUangJalan((prev) => {
+      const next = prev.map((u) =>
+        u.id === params.id
+          ? {
+              ...u,
+              status: 'Selesai' as const,
+              selisih,
+              statusPenyelesaian,
+              tanggalPenyelesaian: params.tanggalPenyelesaian,
+              metodePenyelesaian: params.metodePenyelesaian,
+              catatanVerifikasi: params.catatanVerifikasi,
+              diverifikasiOleh: actorName,
+              kasOpsPenyelesaianId: kasSettleId,
+              updatedAt: now,
+            }
+          : u,
+      );
+      saveStoredArmadaUangJalan(next);
+      return next;
+    });
+    notify(
+      kasSettleId
+        ? `Uang Jalan ${target.nomorUangJalan} selesai (${statusPenyelesaian}) & dicatat di Kas & Tonase.`
+        : `Uang Jalan ${target.nomorUangJalan} diverifikasi & selesai.`,
+    );
+  };
+
+  // ==========================================
+  // SEWA UNIT HANDLERS
+  // ==========================================
+  const handleCreateSewa = (input: Omit<ArmadaSewaUnit, 'id' | 'createdAt' | 'updatedAt'>) => {
+    const now = new Date().toISOString();
+    const created: ArmadaSewaUnit = {
+      ...input,
+      id: `SEWA-${Date.now()}-${Math.random().toString(36).slice(2, 5).toUpperCase()}`,
+      createdAt: now,
+      updatedAt: now,
+    };
+    setSewaList((prev) => {
+      const next = [created, ...prev];
+      saveStoredArmadaSewa(next);
+      return next;
+    });
+    notify(`Pemesanan sewa ${created.nomorSewa} dikonfirmasi (Status: Dipesan).`);
+  };
+
+  const handleHandoverSewa = (params: {
+    id: string;
+    serahTerimaTanggal: string;
+    serahTerimaJam: string;
+    kmAwal: number;
+    kondisiAwal: string;
+    buktiSerahTerimaDataUrl?: string;
+    buktiSerahTerimaNama?: string;
+  }) => {
+    const now = new Date().toISOString();
+    setSewaList((prev) => {
+      const next = prev.map((s) =>
+        s.id === params.id
+          ? {
+              ...s,
+              status: 'Sedang Disewa' as const,
+              serahTerimaTanggal: params.serahTerimaTanggal,
+              serahTerimaJam: params.serahTerimaJam,
+              kmAwal: params.kmAwal,
+              kondisiAwal: params.kondisiAwal,
+              buktiSerahTerimaDataUrl: params.buktiSerahTerimaDataUrl,
+              buktiSerahTerimaNama: params.buktiSerahTerimaNama,
+              updatedAt: now,
+            }
+          : s,
+      );
+      saveStoredArmadaSewa(next);
+      return next;
+    });
+    notify('Serah terima unit tercatat (Status: Sedang Disewa).');
+  };
+
+  const handleReturnSewa = (params: {
+    id: string;
+    kembaliTanggal: string;
+    kembaliJam: string;
+    kmAkhir: number;
+    kondisiKembali: string;
+    catatanKerusakan?: string;
+    buktiKembaliDataUrl?: string;
+    buktiKembaliNama?: string;
+  }) => {
+    const now = new Date().toISOString();
+    setSewaList((prev) => {
+      const next = prev.map((s) =>
+        s.id === params.id
+          ? {
+              ...s,
+              status: 'Dikembalikan' as const,
+              kembaliTanggal: params.kembaliTanggal,
+              kembaliJam: params.kembaliJam,
+              kmAkhir: params.kmAkhir,
+              kondisiKembali: params.kondisiKembali,
+              catatanKerusakan: params.catatanKerusakan,
+              buktiKembaliDataUrl: params.buktiKembaliDataUrl,
+              buktiKembaliNama: params.buktiKembaliNama,
+              updatedAt: now,
+            }
+          : s,
+      );
+      saveStoredArmadaSewa(next);
+      return next;
+    });
+    notify('Unit diterima kembali (Status: Dikembalikan).');
+  };
+
+  // ==========================================
+  // P2H, MAINTENANCE, PERMINTAAN BARANG & KENDALA HANDLERS
+  // ==========================================
+  const handleSubmitP2H = (params: {
+    perjalananId: string;
+    sopirNama: string;
+    kilometer: number;
+    items: P2HChecklistItem[];
+    isPemeriksaanUlang?: boolean;
+  }): { ok: boolean; error?: string } => {
+    const prj = perjalanan.find((p) => p.id === params.perjalananId);
+    if (!prj) return { ok: false, error: 'Penugasan tidak ditemukan.' };
+    // Strict driver ownership check
+    if (prj.sopirNama.trim().toLowerCase() !== params.sopirNama.trim().toLowerCase()) {
+      return {
+        ok: false,
+        error: `Akses ditolak: Akun sopir "${params.sopirNama}" hanya boleh mengisi P2H untuk unit yang ditugaskan kepadanya.`,
+      };
+    }
+    const unit = units.find((u) => u.id === prj.unitId);
+    if (!unit) return { ok: false, error: 'Unit kendaraan tidak ditemukan.' };
+
+    const now = new Date().toISOString();
+    const temuan = params.items.filter((it) => it.kondisi === 'Ada Temuan');
+    const adaKritis = temuan.some((it) => it.kritis);
+    const nomorP2H = generateNextArmadaCode(
+      'P2H',
+      p2hList.map((p) => p.nomorP2H),
+    );
+    const created: ArmadaP2HRecord = {
+      id: `P2H-${Date.now()}-${Math.random().toString(36).slice(2, 5).toUpperCase()}`,
+      nomorP2H,
+      perjalananId: prj.id,
+      nomorPenugasan: prj.nomorPenugasan,
+      unitId: unit.id,
+      kodeUnit: unit.kodeUnit,
+      nomorPolisi: unit.nomorPolisi,
+      sopirNama: prj.sopirNama,
+      kilometer: params.kilometer,
+      tanggalIsi: now,
+      isPemeriksaanUlang: params.isPemeriksaanUlang,
+      items: params.items,
+      jumlahTemuan: temuan.length,
+      adaTemuanKritis: adaKritis,
+      statusTinjauan:
+        temuan.length === 0
+          ? params.isPemeriksaanUlang
+            ? 'Selesai / Lulus Ulang'
+            : 'Lolos'
+          : adaKritis
+            ? 'Ditahan (Temuan Kritis)'
+            : 'Menunggu Tinjauan',
+      maintenanceIds: [],
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    setP2hList((prev) => {
+      const next = [created, ...prev];
+      saveStoredArmadaP2H(next);
+      return next;
+    });
+    notify(
+      adaKritis
+        ? `${nomorP2H} terkirim dengan temuan kritis. Mulai Perjalanan ditahan sampai perbaikan & pemeriksaan ulang.`
+        : `${nomorP2H} berhasil dikirim ke Admin Armada.`,
+    );
+    return { ok: true };
+  };
+
+  const handleCreateMaintenanceFromP2H = (params: {
+    p2h: ArmadaP2HRecord;
+    item: P2HChecklistItem;
+  }): ArmadaMaintenanceRequest => {
+    const now = new Date().toISOString();
+    const nomor = generateNextArmadaCode(
+      'MNT',
+      maintenanceList.map((m) => m.nomorPengajuan),
+    );
+    const created: ArmadaMaintenanceRequest = {
+      id: `MNT-${Date.now()}-${Math.random().toString(36).slice(2, 5).toUpperCase()}`,
+      nomorPengajuan: nomor,
+      sumber: 'Temuan P2H',
+      unitId: params.p2h.unitId,
+      kodeUnit: params.p2h.kodeUnit,
+      nomorPolisi: params.p2h.nomorPolisi,
+      perjalananId: params.p2h.perjalananId,
+      p2hId: params.p2h.id,
+      nomorP2H: params.p2h.nomorP2H,
+      itemTemuan: params.item.label,
+      kritis: params.item.kritis,
+      kilometer: params.p2h.kilometer,
+      catatan: params.item.catatan || `Temuan P2H pada ${params.item.label}`,
+      fotoDataUrl: params.item.fotoDataUrl,
+      fotoNama: params.item.fotoNama,
+      status: 'Diajukan',
+      diajukanOleh: actorName,
+      tanggalDiajukan: getTodayISO(),
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    setMaintenanceList((prev) => {
+      const next = [created, ...prev];
+      saveStoredArmadaMaintenance(next);
+      return next;
+    });
+    setP2hList((prev) => {
+      const next = prev.map((rec) =>
+        rec.id === params.p2h.id
+          ? {
+              ...rec,
+              statusTinjauan: 'Dalam Perbaikan' as const,
+              maintenanceIds: [...new Set([...rec.maintenanceIds, created.id])],
+              updatedAt: now,
+            }
+          : rec,
+      );
+      saveStoredArmadaP2H(next);
+      return next;
+    });
+    notify(`Pengajuan Perbaikan ${nomor} dibuat dari ${params.p2h.nomorP2H}.`);
+    return created;
+  };
+
+  const handleCreateManualMaintenance = (params: {
+    unitId: string;
+    kilometer: number;
+    catatan: string;
+    kritis: boolean;
+    fotoDataUrl?: string;
+    fotoNama?: string;
+  }): ArmadaMaintenanceRequest => {
+    const now = new Date().toISOString();
+    const unit = units.find((u) => u.id === params.unitId);
+    const nomor = generateNextArmadaCode(
+      'MNT',
+      maintenanceList.map((m) => m.nomorPengajuan),
+    );
+    const created: ArmadaMaintenanceRequest = {
+      id: `MNT-${Date.now()}-${Math.random().toString(36).slice(2, 5).toUpperCase()}`,
+      nomorPengajuan: nomor,
+      sumber: 'Laporan Manual',
+      unitId: params.unitId,
+      kodeUnit: unit?.kodeUnit || '-',
+      nomorPolisi: unit?.nomorPolisi || '-',
+      kritis: params.kritis,
+      kilometer: params.kilometer,
+      catatan: params.catatan,
+      fotoDataUrl: params.fotoDataUrl,
+      fotoNama: params.fotoNama,
+      status: 'Diajukan',
+      diajukanOleh: actorName,
+      tanggalDiajukan: getTodayISO(),
+      createdAt: now,
+      updatedAt: now,
+    };
+    setMaintenanceList((prev) => {
+      const next = [created, ...prev];
+      saveStoredArmadaMaintenance(next);
+      return next;
+    });
+    notify(`Pengajuan Perbaikan manual ${nomor} berhasil dibuat.`);
+    return created;
+  };
+
+  const handleReviewMaintenance = (params: {
+    id: string;
+    prioritas: MaintenancePriority;
+    mekanikAtauBengkel: string;
+    catatanTinjauan?: string;
+  }) => {
+    const now = new Date().toISOString();
+    setMaintenanceList((prev) => {
+      const next = prev.map((m) =>
+        m.id === params.id
+          ? {
+              ...m,
+              status: 'Ditinjau' as const,
+              prioritas: params.prioritas,
+              mekanikAtauBengkel: params.mekanikAtauBengkel,
+              catatanTinjauan: params.catatanTinjauan,
+              ditinjauOleh: actorName,
+              tanggalDitinjau: getTodayISO(),
+              updatedAt: now,
+            }
+          : m,
+      );
+      saveStoredArmadaMaintenance(next);
+      return next;
+    });
+    notify('Pengajuan perbaikan disetujui & ditugaskan ke mekanik.');
+  };
+
+  const handleUpdateWorkProgress = (params: {
+    id: string;
+    status: 'Dikerjakan' | 'Menunggu Barang';
+    tindakanPerbaikan: string;
+  }) => {
+    const now = new Date().toISOString();
+    setMaintenanceList((prev) => {
+      const next = prev.map((m) =>
+        m.id === params.id
+          ? {
+              ...m,
+              status: params.status,
+              tindakanPerbaikan: params.tindakanPerbaikan,
+              updatedAt: now,
+            }
+          : m,
+      );
+      saveStoredArmadaMaintenance(next);
+      return next;
+    });
+    notify(`Status perbaikan diperbarui menjadi ${params.status}.`);
+  };
+
+  const handleCompleteRepairWork = (params: { id: string; hasilPekerjaan: string }) => {
+    const now = new Date().toISOString();
+    setMaintenanceList((prev) => {
+      const next = prev.map((m) =>
+        m.id === params.id
+          ? {
+              ...m,
+              status: 'Selesai' as const,
+              hasilPekerjaan: params.hasilPekerjaan,
+              tanggalSelesai: getTodayISO(),
+              updatedAt: now,
+            }
+          : m,
+      );
+      saveStoredArmadaMaintenance(next);
+      return next;
+    });
+    notify('Hasil pekerjaan mekanik disimpan. Siap pemeriksaan ulang Kepala Armada.');
+  };
+
+  const handleReleaseUnitHold = (params: { id: string; hasilPemeriksaanUlang: string }) => {
+    const now = new Date().toISOString();
+    const target = maintenanceList.find((m) => m.id === params.id);
+    setMaintenanceList((prev) => {
+      const next = prev.map((m) =>
+        m.id === params.id
+          ? {
+              ...m,
+              hasilPemeriksaanUlang: params.hasilPemeriksaanUlang,
+              pemeriksaanUlangOleh: actorName,
+              tanggalPemeriksaanUlang: getTodayISO(),
+              penahananDilepas: true,
+              tanggalPenahananDilepas: now,
+              updatedAt: now,
+            }
+          : m,
+      );
+      saveStoredArmadaMaintenance(next);
+      return next;
+    });
+    if (target?.p2hId) {
+      setP2hList((prev) => {
+        const next = prev.map((p) =>
+          p.id === target.p2hId
+            ? {
+                ...p,
+                statusTinjauan: 'Selesai / Lulus Ulang' as const,
+                catatanAdmin: params.hasilPemeriksaanUlang,
+                updatedAt: now,
+              }
+            : p,
+        );
+        saveStoredArmadaP2H(next);
+        return next;
+      });
+    }
+    notify(`Pemeriksaan ulang dicatat & penahanan unit ${target?.kodeUnit || ''} dilepas.`);
+  };
+
+  const handleCreatePermintaanBarang = (params: {
+    maintenanceId: string;
+    dimintaOleh: string;
+    items: Array<{ namaBarang: string; satuan: string; jumlahDiminta: number }>;
+    catatan?: string;
+  }) => {
+    const maint = maintenanceList.find((m) => m.id === params.maintenanceId);
+    if (!maint) return;
+    const now = new Date().toISOString();
+    const nomor = generateNextArmadaCode(
+      'PB',
+      permintaanBarang.map((b) => b.nomorPermintaan),
+    );
+    const createdItems: PermintaanBarangItem[] = params.items.map((it, idx) => ({
+      id: `PBI-${Date.now()}-${idx + 1}`,
+      namaBarang: it.namaBarang,
+      satuan: it.satuan,
+      jumlahDiminta: it.jumlahDiminta,
+      jumlahDisetujui: it.jumlahDiminta,
+      jumlahDiterima: 0,
+    }));
+    const created: ArmadaPermintaanBarang = {
+      id: `PB-${Date.now()}-${Math.random().toString(36).slice(2, 5).toUpperCase()}`,
+      nomorPermintaan: nomor,
+      maintenanceId: maint.id,
+      nomorPengajuanPerbaikan: maint.nomorPengajuan,
+      unitId: maint.unitId,
+      kodeUnit: maint.kodeUnit,
+      nomorPolisi: maint.nomorPolisi,
+      tanggalPermintaan: getTodayISO(),
+      dimintaOleh: params.dimintaOleh,
+      items: createdItems,
+      status: computePermintaanBarangStatus(createdItems),
+      catatan: params.catatan,
+      createdAt: now,
+      updatedAt: now,
+    };
+    setPermintaanBarang((prev) => {
+      const next = [created, ...prev];
+      saveStoredArmadaPermintaanBarang(next);
+      return next;
+    });
+    // Move maintenance to Menunggu Barang automatically if currently Ditinjau/Dikerjakan
+    if (maint.status === 'Ditinjau' || maint.status === 'Dikerjakan') {
+      setMaintenanceList((prev) => {
+        const next = prev.map((m) =>
+          m.id === maint.id ? { ...m, status: 'Menunggu Barang' as const, updatedAt: now } : m,
+        );
+        saveStoredArmadaMaintenance(next);
+        return next;
+      });
+    }
+    notify(`Permintaan Barang ${nomor} dibuat untuk ${maint.nomorPengajuan}.`);
+  };
+
+  const handleUpdatePermintaanBarangItems = (params: {
+    id: string;
+    items: PermintaanBarangItem[];
+  }) => {
+    const now = new Date().toISOString();
+    const nextStatus = computePermintaanBarangStatus(params.items);
+    setPermintaanBarang((prev) => {
+      const next = prev.map((req) =>
+        req.id === params.id
+          ? { ...req, items: params.items, status: nextStatus, updatedAt: now }
+          : req,
+      );
+      saveStoredArmadaPermintaanBarang(next);
+      return next;
+    });
+  };
+
+  const handleSubmitKendala = (params: {
+    perjalananId: string;
+    sopirNama: string;
+    kategori: ArmadaKendalaKategori;
+    catatan: string;
+    fotoDataUrl?: string;
+    fotoNama?: string;
+  }) => {
+    const prj = perjalanan.find((p) => p.id === params.perjalananId);
+    const unit = prj ? units.find((u) => u.id === prj.unitId) : undefined;
+    const now = new Date().toISOString();
+    const nomor = generateNextArmadaCode(
+      'KND',
+      kendalaList.map((k) => k.nomorLaporan),
+    );
+    const created: ArmadaKendalaReport = {
+      id: `KND-${Date.now()}-${Math.random().toString(36).slice(2, 5).toUpperCase()}`,
+      nomorLaporan: nomor,
+      perjalananId: params.perjalananId,
+      nomorPenugasan: prj?.nomorPenugasan || '-',
+      unitId: unit?.id || '',
+      kodeUnit: unit?.kodeUnit || '-',
+      nomorPolisi: unit?.nomorPolisi || '-',
+      sopirNama: params.sopirNama,
+      kategori: params.kategori,
+      catatan: params.catatan,
+      fotoDataUrl: params.fotoDataUrl,
+      fotoNama: params.fotoNama,
+      status: 'Dilaporkan',
+      waktuLapor: now,
+      updatedAt: now,
+    };
+    setKendalaList((prev) => {
+      const next = [created, ...prev];
+      saveStoredArmadaKendala(next);
+      return next;
+    });
+    notify(`Laporan kendala ${nomor} terkirim ke Admin Armada.`);
+  };
+
+  // ==========================================
+  // UNIFIED SPS ARMADA WORKBOOK EXPORT / IMPORT
+  // ==========================================
+  const handleExportSpsWorkbook = () => {
+    exportSpsArmadaWorkbook({ units, pelanggan, lokasi, tarif });
+    notify('File SPS Armada (.xlsx) dengan tab Unit Armada, Pelanggan, Lokasi & Tarif diunduh.');
+  };
+
+  const handleImportSpsWorkbook = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    try {
+      const result = await importSpsArmadaWorkbook(file, { units, pelanggan, lokasi, tarif });
+      if (result.tabsFound.length === 0) {
+        notify('Tidak ditemukan tab Unit Armada / Pelanggan / Lokasi / Tarif pada file tersebut.');
+        return;
+      }
+      setUnits(result.dataset.units);
+      setPelanggan(result.dataset.pelanggan);
+      setLokasi(result.dataset.lokasi);
+      setTarif(result.dataset.tarif);
+      saveStoredArmadaUnits(result.dataset.units);
+      saveStoredArmadaPelanggan(result.dataset.pelanggan);
+      saveStoredArmadaLokasi(result.dataset.lokasi);
+      saveStoredArmadaTarif(result.dataset.tarif);
+      notify(
+        `Impor SPS Armada selesai (${result.counts.pelanggan} pelanggan, ${result.counts.lokasi} lokasi, ${result.counts.tarif} tarif).`,
+      );
+    } catch {
+      notify('Gagal membaca file Excel SPS Armada. Pastikan format .xlsx valid.');
+    }
+  };
+
+  // ==========================================
+  // DASHBOARD METRICS & FILTERING
+  // ==========================================
   const stats = useMemo(() => {
     const total = units.length;
     const aktif = units.filter((u) => u.status === 'Aktif').length;
-    const beroperasi = units.filter((u) => u.status === 'Aktif' && u.statusOperasional === 'Beroperasi').length;
-    const standby = units.filter((u) => u.status === 'Aktif' && u.statusOperasional !== 'Beroperasi').length;
-    const nonaktifServis = units.filter((u) => u.status === 'Nonaktif' || u.statusOperasional === 'Servis').length;
-    const totalMuatan = units.reduce((sum, u) => sum + (Number(u.muatanTon) || 0), 0);
-    return { total, aktif, beroperasi, standby, nonaktifServis, totalMuatan };
-  }, [units]);
+    const beroperasi = units.filter(
+      (u) => u.status === 'Aktif' && u.statusOperasional === 'Beroperasi',
+    ).length;
+    const perjalananAktif = perjalanan.filter(
+      (p) => p.status === 'Dijadwalkan' || p.status === 'Berjalan',
+    ).length;
+    const sewaAktif = sewaList.filter((s) => s.status === 'Sedang Disewa').length;
+    const sewaOverdue = sewaList.filter((s) => isSewaOverdue(s)).length;
+    const p2hKritis = p2hList.filter(
+      (p) => p.adaTemuanKritis && p.statusTinjauan !== 'Selesai / Lulus Ulang',
+    ).length;
+    const maintAktif = maintenanceList.filter((m) => m.status !== 'Selesai').length;
+    return {
+      total,
+      aktif,
+      beroperasi,
+      perjalananAktif,
+      sewaAktif,
+      sewaOverdue,
+      p2hKritis,
+      maintAktif,
+    };
+  }, [maintenanceList, p2hList, perjalanan, sewaList, units]);
 
   const filteredDashboardUnits = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -229,10 +1402,7 @@ export function ArmadaDashboardPage() {
         !u.kodeUnit.toLowerCase().includes(q) &&
         !u.nomorPolisi.toLowerCase().includes(q) &&
         !u.jenisKendaraan.toLowerCase().includes(q) &&
-        !u.merek.toLowerCase().includes(q) &&
-        !u.model.toLowerCase().includes(q) &&
-        !(u.supirUtama || '').toLowerCase().includes(q) &&
-        !(u.lokasiTerakhir || '').toLowerCase().includes(q)
+        !(u.supirUtama || '').toLowerCase().includes(q)
       ) {
         return false;
       }
@@ -254,13 +1424,14 @@ export function ArmadaDashboardPage() {
     window.location.href = getPortalBaseUrlFromArmada();
   };
 
-  const openMenu = (menu: ArmadaMenuId, unitId: string | null = null) => {
+  const openMenu = (menu: ArmadaMenuId) => {
     setActiveMenu(menu);
-    setSelectedUnitId(unitId);
     setMobileMenuOpen(false);
   };
 
-  // State 1: Not logged in — redirecting to Portal SPD login
+  // ==========================================
+  // AUTH GATES
+  // ==========================================
   if (!session) {
     return (
       <main className="min-h-screen flex items-center justify-center p-6">
@@ -288,8 +1459,7 @@ export function ArmadaDashboardPage() {
     );
   }
 
-  // State 2: Logged in, but NOT Super Admin
-  if (!isActiveSuperAdminSession(session)) {
+  if (!canAccessArmadaSession(session)) {
     return (
       <main className="min-h-screen flex items-center justify-center p-6">
         <div className="t-card rounded-2xl p-7 max-w-lg w-full space-y-5 shadow-xl">
@@ -298,20 +1468,20 @@ export function ArmadaDashboardPage() {
               <ShieldAlert className="w-5 h-5" />
             </div>
             <div>
-              <h1 className="text-lg font-display t-text">Akses Terbatas — Khusus Super Admin</h1>
+              <h1 className="text-lg font-display t-text">
+                Akses Terbatas — Khusus Super Admin &amp; Sopir
+              </h1>
               <p className="text-xs t-muted mt-1 leading-relaxed">
                 Halaman <b>Sistem Operasional dan Pemantauan Armada</b> hanya dapat diakses oleh
-                akun dengan role <b>Super Admin</b>.
+                akun dengan role <b>Super Admin</b> atau <b>Sopir</b>.
               </p>
             </div>
           </div>
 
           <div className="p-3.5 rounded-xl t-subtle border t-border text-xs space-y-1">
             <div className="flex justify-between">
-              <span className="t-muted">Akun aktif saat ini:</span>
-              <span className="font-bold t-text">
-                {session.nama || session.username || session.email}
-              </span>
+              <span className="t-muted">Akun aktif:</span>
+              <span className="font-bold t-text">{actorName}</span>
             </div>
             <div className="flex justify-between">
               <span className="t-muted">Role:</span>
@@ -334,7 +1504,7 @@ export function ArmadaDashboardPage() {
               className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl t-btn-primary text-xs"
             >
               <LogOut className="w-3.5 h-3.5" />
-              <span>Ganti Akun Super Admin</span>
+              <span>Ganti Akun</span>
             </button>
           </div>
         </div>
@@ -342,96 +1512,258 @@ export function ArmadaDashboardPage() {
     );
   }
 
-  // State 3: Active Super Admin Session — Armada Application Shell
-  const userName = session.nama || session.username || session.email || 'Super Admin';
+  // DEDICATED MOBILE-FIRST VIEW WHEN LOGGED IN DIRECTLY AS SOPIR
+  if (isActiveSopirSession(session)) {
+    const lockedDriver = session.nama || session.username || 'Dedi Kurniawan';
+    return (
+      <div className="min-h-screen flex flex-col">
+        <header className="m-3 mb-0 t-sidebar rounded-2xl px-4 py-3 flex items-center justify-between gap-2 shadow-sm">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div
+              className="px-2.5 py-1.5 rounded-xl border border-white/15 shrink-0"
+              style={{ background: SPD_NAVY_GRADIENT }}
+            >
+              <SpdLogoWordmark variant="on-dark" size="xs" />
+            </div>
+            <div className="min-w-0">
+              <div className="text-xs font-bold text-white truncate">Armada · Tugas Saya</div>
+              <div className="text-[10px] truncate" style={{ color: 'var(--text-sidebar-muted)' }}>
+                {lockedDriver} (Sopir)
+              </div>
+            </div>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={handleCycleTheme}
+              aria-label="Ganti tema"
+              className="p-2 rounded-xl bg-white/10 text-white"
+            >
+              <Palette className="w-4 h-4" />
+            </button>
+            <button
+              type="button"
+              onClick={handleLogoutAndSwitch}
+              aria-label="Keluar"
+              className="inline-flex items-center gap-1 px-2.5 py-2 rounded-xl bg-white/10 text-xs font-semibold text-white"
+            >
+              <LogOut className="w-3.5 h-3.5" />
+              <span>Keluar</span>
+            </button>
+          </div>
+        </header>
+
+        <main className="flex-1 p-3 sm:p-5">
+          <TugasSayaSopirPage
+            lockedSopirName={lockedDriver}
+            perjalananList={perjalanan}
+            units={units}
+            pelangganList={pelanggan}
+            lokasiList={lokasi}
+            uangJalanList={uangJalan}
+            p2hList={p2hList}
+            maintenanceList={maintenanceList}
+            kendalaList={kendalaList}
+            onSubmitP2H={handleSubmitP2H}
+            onStartPerjalanan={handleStartPerjalanan}
+            onMarkSelesaiMuat={handleMarkSelesaiMuat}
+            onMarkSelesaiBongkar={handleMarkSelesaiBongkar}
+            onSubmitKendala={handleSubmitKendala}
+            onSubmitPertanggungjawaban={handleSubmitPertanggungjawaban}
+          />
+        </main>
+
+        {toastMsg && (
+          <div
+            role="status"
+            className="fixed bottom-4 right-4 left-4 sm:left-auto z-50 px-4 py-3 rounded-xl t-status-ok shadow-xl text-xs font-bold flex items-center gap-2 border border-current/15"
+          >
+            <CheckCircle2 className="w-4 h-4 shrink-0" />
+            <span>{toastMsg}</span>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // SUPER ADMIN / ADMIN ARMADA FULL APPLICATION SHELL
+  const navGroups: Array<{
+    title: string;
+    icon: typeof Database;
+    items: Array<{
+      id: ArmadaMenuId;
+      label: string;
+      icon: typeof Truck;
+      count?: number;
+    }>;
+  }> = [
+    {
+      title: 'Operasional',
+      icon: LayoutDashboard,
+      items: [
+        { id: 'armada-dashboard', label: 'Dashboard Armada', icon: LayoutDashboard },
+        { id: 'armada-tugas-saya', label: 'Tugas Saya (HP Sopir)', icon: Smartphone },
+      ],
+    },
+    {
+      title: 'Perjalanan & Sewa',
+      icon: Route,
+      items: [
+        { id: 'armada-perjalanan', label: 'Perjalanan', icon: Route, count: perjalanan.length },
+        { id: 'armada-uang-jalan', label: 'Uang Jalan', icon: Wallet, count: uangJalan.length },
+        { id: 'armada-sewa-unit', label: 'Sewa Unit', icon: KeyRound, count: sewaList.length },
+      ],
+    },
+    {
+      title: 'P2H & Maintenance',
+      icon: Wrench,
+      items: [
+        { id: 'armada-hasil-p2h', label: 'Hasil P2H', icon: ClipboardCheck, count: p2hList.length },
+        {
+          id: 'armada-maintenance',
+          label: 'Pengajuan Perbaikan',
+          icon: Wrench,
+          count: maintenanceList.length,
+        },
+        {
+          id: 'armada-permintaan-barang',
+          label: 'Permintaan Barang',
+          icon: Package,
+          count: permintaanBarang.length,
+        },
+      ],
+    },
+    {
+      title: 'Master Data',
+      icon: Database,
+      items: [
+        { id: 'armada-master-unit', label: 'Unit Armada', icon: Truck, count: units.length },
+        {
+          id: 'armada-master-pelanggan',
+          label: 'Pelanggan',
+          icon: Building2,
+          count: pelanggan.length,
+        },
+        {
+          id: 'armada-master-lokasi',
+          label: 'Lokasi Muat–Bongkar',
+          icon: MapPin,
+          count: lokasi.length,
+        },
+        { id: 'armada-master-tarif', label: 'Tarif', icon: Banknote, count: tarif.length },
+      ],
+    },
+  ];
+
+  const renderSidebarNav = () => (
+    <nav className="space-y-4" aria-label="Navigasi Armada">
+      {navGroups.map((group) => {
+        const GroupIcon = group.icon;
+        return (
+          <div key={group.title} className="space-y-1">
+            <div
+              className="px-2.5 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider"
+              style={{ color: 'var(--text-sidebar-muted)' }}
+            >
+              <GroupIcon className="w-3 h-3" />
+              <span>{group.title}</span>
+            </div>
+            {group.items.map((item) => {
+              const Icon = item.icon;
+              const active = activeMenu === item.id;
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => openMenu(item.id)}
+                  className={`w-full flex items-center justify-between gap-2 px-3 py-2 rounded-xl text-xs font-semibold transition-colors ${
+                    active ? 'font-bold shadow-xs' : 't-sidebar-btn'
+                  }`}
+                  style={
+                    active
+                      ? { backgroundColor: 'var(--btn-gold)', color: 'var(--btn-gold-text)' }
+                      : undefined
+                  }
+                >
+                  <span className="inline-flex items-center gap-2 truncate">
+                    <Icon className="w-4 h-4 shrink-0" />
+                    <span className="truncate">{item.label}</span>
+                  </span>
+                  {typeof item.count === 'number' && (
+                    <span
+                      className={`px-1.5 py-0.5 rounded-md text-[10px] font-mono-num font-bold ${
+                        active ? 'bg-black/15' : 'bg-white/10 text-white/85'
+                      }`}
+                    >
+                      {item.count}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        );
+      })}
+    </nav>
+  );
 
   return (
     <div className="min-h-screen flex flex-col lg:flex-row">
+      {/* Hidden input for SPS Armada Excel import */}
+      <input
+        ref={spsInputRef}
+        type="file"
+        accept=".xlsx,.xls"
+        className="hidden"
+        onChange={handleImportSpsWorkbook}
+      />
+
       {/* Desktop Sidebar */}
       <aside className="hidden lg:flex lg:flex-col lg:w-64 lg:sticky lg:top-0 lg:h-screen shrink-0 p-4 pr-0">
-        <div className="t-sidebar rounded-3xl flex-1 flex flex-col justify-between p-4 shadow-xl overflow-y-auto">
-          <div className="space-y-5">
-            {/* Brand */}
+        <div className="t-sidebar rounded-3xl flex-1 flex flex-col justify-between p-4 shadow-xl overflow-y-auto gap-4">
+          <div className="space-y-4">
             <div
               className="p-3.5 rounded-2xl border border-white/15 flex items-center justify-between gap-2"
               style={{ background: SPD_NAVY_GRADIENT }}
             >
               <SpdLogoWordmark variant="on-dark" size="md" />
-              <span className="text-[10px] font-bold uppercase tracking-wider text-white/85 px-2 py-0.5 rounded-md bg-white/10">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-white/85">
                 Armada
               </span>
             </div>
 
-            {/* Navigation */}
-            <nav className="space-y-4" aria-label="Navigasi Armada">
-              <div className="space-y-1">
-                <div
-                  className="px-2.5 text-[10px] font-bold uppercase tracking-wider"
-                  style={{ color: 'var(--text-sidebar-muted)' }}
-                >
-                  Operasional
-                </div>
-                <button
-                  type="button"
-                  onClick={() => openMenu('armada-dashboard')}
-                  className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-xs font-semibold transition-colors ${
-                    activeMenu === 'armada-dashboard' ? 'font-bold shadow-xs' : 't-sidebar-btn'
-                  }`}
-                  style={
-                    activeMenu === 'armada-dashboard'
-                      ? { backgroundColor: 'var(--btn-gold)', color: 'var(--btn-gold-text)' }
-                      : undefined
-                  }
-                >
-                  <LayoutDashboard className="w-4 h-4 shrink-0" />
-                  <span>Dashboard Armada</span>
-                </button>
-              </div>
-
-              {/* Master Data Group */}
-              <div className="space-y-1">
-                <div
-                  className="px-2.5 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider"
-                  style={{ color: 'var(--text-sidebar-muted)' }}
-                >
-                  <Database className="w-3 h-3" />
-                  <span>Master Data</span>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => openMenu('armada-master-unit')}
-                  className={`w-full flex items-center justify-between gap-2 px-3 py-2.5 rounded-xl text-xs font-semibold transition-colors ${
-                    activeMenu === 'armada-master-unit' ? 'font-bold shadow-xs' : 't-sidebar-btn'
-                  }`}
-                  style={
-                    activeMenu === 'armada-master-unit'
-                      ? { backgroundColor: 'var(--btn-gold)', color: 'var(--btn-gold-text)' }
-                      : undefined
-                  }
-                >
-                  <span className="inline-flex items-center gap-2.5 truncate">
-                    <Truck className="w-4 h-4 shrink-0" />
-                    <span>Unit Armada</span>
-                  </span>
-                  <span
-                    className={`px-1.5 py-0.5 rounded-md text-[10px] font-mono-num font-bold ${
-                      activeMenu === 'armada-master-unit'
-                        ? 'bg-black/15'
-                        : 'bg-white/10 text-white/85'
-                    }`}
-                  >
-                    {units.length}
-                  </span>
-                </button>
-              </div>
-            </nav>
+            {renderSidebarNav()}
           </div>
 
-          {/* Bottom User & Utilities */}
-          <div className="pt-4 border-t border-white/10 space-y-2.5">
-            <div className="px-2 py-1.5 rounded-xl bg-white/5 border border-white/10">
-              <div className="text-xs font-bold text-white truncate">{userName}</div>
-              <div className="inline-flex items-center gap-1 text-[10px] font-semibold mt-0.5" style={{ color: 'var(--accent-highlight)' }}>
+          <div className="pt-3 border-t border-white/10 space-y-2">
+            {/* Unified SPS Armada Excel Export & Import */}
+            <div className="grid grid-cols-2 gap-1.5">
+              <button
+                type="button"
+                onClick={handleExportSpsWorkbook}
+                title="Unduh file SPS Armada (.xlsx) berisi tab Unit Armada, Pelanggan, Lokasi, dan Tarif"
+                className="inline-flex items-center justify-center gap-1 px-2 py-2 rounded-xl bg-white/10 hover:bg-white/15 text-[11px] font-semibold text-white"
+              >
+                <FileSpreadsheet className="w-3.5 h-3.5" />
+                <span>SPS .xlsx</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => spsInputRef.current?.click()}
+                title="Impor perubahan dari file SPS Armada (.xlsx)"
+                className="inline-flex items-center justify-center gap-1 px-2 py-2 rounded-xl bg-white/10 hover:bg-white/15 text-[11px] font-semibold text-white"
+              >
+                <Upload className="w-3.5 h-3.5" />
+                <span>Impor SPS</span>
+              </button>
+            </div>
+
+            <div className="px-2.5 py-1.5 rounded-xl bg-white/5 border border-white/10">
+              <div className="text-xs font-bold text-white truncate">{actorName}</div>
+              <div
+                className="inline-flex items-center gap-1 text-[10px] font-semibold mt-0.5"
+                style={{ color: 'var(--accent-highlight)' }}
+              >
                 <ShieldCheck className="w-3 h-3" />
                 <span>{session.role}</span>
               </div>
@@ -441,7 +1773,7 @@ export function ArmadaDashboardPage() {
               <button
                 type="button"
                 onClick={handleCycleTheme}
-                className="inline-flex items-center justify-center gap-1.5 px-2.5 py-2 rounded-xl bg-white/10 hover:bg-white/15 text-[11px] font-semibold text-white"
+                className="inline-flex items-center justify-center gap-1 px-2 py-2 rounded-xl bg-white/10 hover:bg-white/15 text-[11px] font-semibold text-white"
               >
                 <Palette className="w-3.5 h-3.5" />
                 <span>{THEME_LABELS[theme]}</span>
@@ -449,7 +1781,7 @@ export function ArmadaDashboardPage() {
               <button
                 type="button"
                 onClick={handleBackToPortal}
-                className="inline-flex items-center justify-center gap-1.5 px-2.5 py-2 rounded-xl bg-white/10 hover:bg-white/15 text-[11px] font-semibold text-white"
+                className="inline-flex items-center justify-center gap-1 px-2 py-2 rounded-xl bg-white/10 hover:bg-white/15 text-[11px] font-semibold text-white"
               >
                 <ArrowLeft className="w-3.5 h-3.5" />
                 <span>Portal SPD</span>
@@ -480,7 +1812,7 @@ export function ArmadaDashboardPage() {
           <div className="min-w-0">
             <div className="text-xs font-bold text-white truncate">Sistem Armada</div>
             <div className="text-[10px] truncate" style={{ color: 'var(--text-sidebar-muted)' }}>
-              {activeMenu === 'armada-master-unit' ? 'Master Data → Unit Armada' : 'Dashboard'}
+              {MENU_TITLE_MAP[activeMenu]}
             </div>
           </div>
         </div>
@@ -496,50 +1828,18 @@ export function ArmadaDashboardPage() {
 
       {/* Mobile Navigation Drawer */}
       {mobileMenuOpen && (
-        <div className="lg:hidden mx-3 mt-2 t-sidebar rounded-2xl p-3 space-y-2.5 shadow-lg">
-          <button
-            type="button"
-            onClick={() => openMenu('armada-dashboard')}
-            className={`w-full flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold ${
-              activeMenu === 'armada-dashboard' ? 'font-bold' : 't-sidebar-btn'
-            }`}
-            style={
-              activeMenu === 'armada-dashboard'
-                ? { backgroundColor: 'var(--btn-gold)', color: 'var(--btn-gold-text)' }
-                : undefined
-            }
-          >
-            <LayoutDashboard className="w-4 h-4" />
-            <span>Dashboard Armada</span>
-          </button>
-          <div className="pt-1 border-t border-white/10 space-y-1">
-            <div
-              className="px-2 text-[10px] font-bold uppercase tracking-wider"
-              style={{ color: 'var(--text-sidebar-muted)' }}
-            >
-              Master Data
-            </div>
-            <button
-              type="button"
-              onClick={() => openMenu('armada-master-unit')}
-              className={`w-full flex items-center justify-between gap-2 px-3 py-2 rounded-xl text-xs font-semibold ${
-                activeMenu === 'armada-master-unit' ? 'font-bold' : 't-sidebar-btn'
-              }`}
-              style={
-                activeMenu === 'armada-master-unit'
-                  ? { backgroundColor: 'var(--btn-gold)', color: 'var(--btn-gold-text)' }
-                  : undefined
-              }
-            >
-              <span className="inline-flex items-center gap-2">
-                <Truck className="w-4 h-4" />
-                <span>Unit Armada</span>
-              </span>
-              <span className="text-[10px] font-mono-num font-bold">{units.length}</span>
-            </button>
-          </div>
+        <div className="lg:hidden mx-3 mt-2 t-sidebar rounded-2xl p-3 space-y-3 shadow-lg">
+          {renderSidebarNav()}
           <div className="pt-2 border-t border-white/10 flex flex-wrap items-center justify-between gap-2">
-            <div className="flex items-center gap-1.5">
+            <div className="flex flex-wrap items-center gap-1.5">
+              <button
+                type="button"
+                onClick={handleExportSpsWorkbook}
+                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-white/10 text-xs text-white font-semibold"
+              >
+                <FileSpreadsheet className="w-3.5 h-3.5" />
+                <span>SPS .xlsx</span>
+              </button>
               <button
                 type="button"
                 onClick={handleCycleTheme}
@@ -572,131 +1872,358 @@ export function ArmadaDashboardPage() {
       {/* Main Content Area */}
       <main className="flex-1 p-5 sm:p-6 lg:p-8 overflow-y-auto">
         <div className="max-w-7xl mx-auto space-y-5">
-          {/* App Top Title Strip */}
+          {/* Clean Top Strip */}
           <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b t-border">
             <div>
               <h1 className="text-base sm:text-lg font-display t-text">
                 Sistem Operasional dan Pemantauan Armada
               </h1>
-              <p className="text-[11px] t-muted">PT. Sarana Putra Daerah &middot; Akses Super Admin</p>
+              <p className="text-[11px] t-muted">
+                PT. Sarana Putra Daerah &middot; {MENU_TITLE_MAP[activeMenu]}
+              </p>
             </div>
-            <div className="inline-flex items-center gap-1.5 text-[11px] font-semibold">
+            <div className="flex items-center gap-2">
               <button
                 type="button"
-                onClick={() => openMenu('armada-dashboard')}
-                className={`px-3 py-1.5 rounded-xl transition-colors ${
-                  activeMenu === 'armada-dashboard' ? 't-btn-primary' : 't-btn-secondary'
+                onClick={() => openMenu('armada-tugas-saya')}
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap ${
+                  activeMenu === 'armada-tugas-saya' ? 't-btn-primary' : 't-btn-secondary'
                 }`}
               >
-                Dashboard
-              </button>
-              <button
-                type="button"
-                onClick={() => openMenu('armada-master-unit')}
-                className={`px-3 py-1.5 rounded-xl transition-colors ${
-                  activeMenu === 'armada-master-unit' ? 't-btn-primary' : 't-btn-secondary'
-                }`}
-              >
-                Master Data &rarr; Unit Armada
+                <Smartphone className="w-3.5 h-3.5" />
+                <span>Mode HP Sopir</span>
               </button>
             </div>
           </div>
 
-          {activeMenu === 'armada-master-unit' ? (
+          {/* ROUTE VIEWS */}
+          {activeMenu === 'armada-master-unit' && (
             <UnitArmadaPage
               units={units}
+              perjalananList={perjalanan}
+              p2hList={p2hList}
+              maintenanceList={maintenanceList}
+              permintaanBarangList={permintaanBarang}
+              pelangganList={pelanggan}
+              lokasiList={lokasi}
               selectedUnitId={selectedUnitId}
               onSelectUnit={setSelectedUnitId}
               onSaveUnit={handleSaveUnit}
-              onToggleStatus={handleToggleStatus}
+              onToggleStatus={handleToggleUnitStatus}
+              onOpenPerjalanan={(id) => {
+                setSelectedPerjalananId(id);
+                openMenu('armada-perjalanan');
+              }}
+              onOpenP2H={(id) => {
+                setSelectedP2HId(id);
+                openMenu('armada-hasil-p2h');
+              }}
+              onOpenMaintenance={(id) => {
+                setSelectedMaintenanceId(id);
+                openMenu('armada-maintenance');
+              }}
             />
-          ) : (
-            <section className="space-y-5">
-              {/* Uji Coba / Session Notice Banner */}
-              <div className="p-3.5 rounded-xl t-status-info text-xs flex flex-wrap items-center justify-between gap-2">
-                <div className="flex items-start sm:items-center gap-2">
-                  <Info className="w-4 h-4 shrink-0 mt-0.5 sm:mt-0" />
-                  <span>
-                    <b>Mode Uji Coba Awal (Data Dummy):</b> Data tersinkron langsung dengan{' '}
-                    <b>Master Data &rarr; Unit Armada</b> di browser ini.
-                  </span>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => openMenu('armada-master-unit')}
-                  className="inline-flex items-center gap-1 font-bold underline whitespace-nowrap"
-                >
-                  <span>Kelola Unit Armada</span>
-                  <ChevronRight className="w-3.5 h-3.5" />
-                </button>
-              </div>
+          )}
 
-              {/* 4 KPI Cards */}
+          {activeMenu === 'armada-master-pelanggan' && (
+            <PelangganPage
+              pelangganList={pelanggan}
+              lokasiList={lokasi}
+              tarifList={tarif}
+              onSavePelanggan={handleSavePelanggan}
+              onToggleStatus={handleTogglePelangganStatus}
+              onOpenLokasiForPelanggan={(plgId, openCreate) => {
+                setLokasiFilterPlgId(plgId);
+                setLokasiAutoOpen(Boolean(openCreate));
+                openMenu('armada-master-lokasi');
+              }}
+              onOpenTarifForPelanggan={(plgId, openCreate) => {
+                setTarifFilterPlgId(plgId);
+                setTarifAutoOpen(Boolean(openCreate));
+                openMenu('armada-master-tarif');
+              }}
+              onExportWorkbook={handleExportSpsWorkbook}
+            />
+          )}
+
+          {activeMenu === 'armada-master-lokasi' && (
+            <LokasiPage
+              lokasiList={lokasi}
+              pelangganList={pelanggan}
+              initialPelangganFilter={lokasiFilterPlgId}
+              autoOpenCreate={lokasiAutoOpen}
+              onConsumeAutoOpen={() => setLokasiAutoOpen(false)}
+              onSaveLokasi={handleSaveLokasi}
+              onToggleStatus={handleToggleLokasiStatus}
+              onExportWorkbook={handleExportSpsWorkbook}
+            />
+          )}
+
+          {activeMenu === 'armada-master-tarif' && (
+            <TarifPage
+              tarifList={tarif}
+              pelangganList={pelanggan}
+              lokasiList={lokasi}
+              units={units}
+              initialPelangganFilter={tarifFilterPlgId}
+              autoOpenCreate={tarifAutoOpen}
+              onConsumeAutoOpen={() => setTarifAutoOpen(false)}
+              onSaveTarif={handleSaveTarif}
+              onToggleStatus={handleToggleTarifStatus}
+              onExportWorkbook={handleExportSpsWorkbook}
+            />
+          )}
+
+          {activeMenu === 'armada-perjalanan' && (
+            <PerjalananPage
+              perjalananList={perjalanan}
+              sewaList={sewaList}
+              units={units}
+              pelangganList={pelanggan}
+              lokasiList={lokasi}
+              tarifList={tarif}
+              uangJalanList={uangJalan}
+              p2hList={p2hList}
+              maintenanceList={maintenanceList}
+              selectedPerjalananId={selectedPerjalananId}
+              onSelectPerjalanan={setSelectedPerjalananId}
+              onSavePerjalanan={handleSavePerjalanan}
+              onStartPerjalanan={handleStartPerjalanan}
+              onCompletePerjalanan={handleCompletePerjalanan}
+              onCreateUangJalan={handleCreateUangJalan}
+              onOpenUangJalan={(ujId) => {
+                setSelectedUangJalanId(ujId);
+                openMenu('armada-uang-jalan');
+              }}
+              onOpenP2H={(p2hId) => {
+                setSelectedP2HId(p2hId);
+                openMenu('armada-hasil-p2h');
+              }}
+            />
+          )}
+
+          {activeMenu === 'armada-uang-jalan' && (
+            <UangJalanPage
+              uangJalanList={uangJalan}
+              perjalananList={perjalanan}
+              units={units}
+              pelangganList={pelanggan}
+              lokasiList={lokasi}
+              selectedUangJalanId={selectedUangJalanId}
+              onSelectUangJalan={setSelectedUangJalanId}
+              onOpenPerjalanan={(prjId) => {
+                setSelectedPerjalananId(prjId);
+                openMenu('armada-perjalanan');
+              }}
+              onDisburseUangJalan={handleDisburseUangJalan}
+              onSubmitPertanggungjawaban={handleSubmitPertanggungjawaban}
+              onVerifyFinishUangJalan={handleVerifyFinishUangJalan}
+            />
+          )}
+
+          {activeMenu === 'armada-sewa-unit' && (
+            <SewaUnitPage
+              sewaList={sewaList}
+              perjalananList={perjalanan}
+              units={units}
+              pelangganList={pelanggan}
+              onCreateSewa={handleCreateSewa}
+              onHandoverSewa={handleHandoverSewa}
+              onReturnSewa={handleReturnSewa}
+            />
+          )}
+
+          {activeMenu === 'armada-tugas-saya' && (
+            <TugasSayaSopirPage
+              perjalananList={perjalanan}
+              units={units}
+              pelangganList={pelanggan}
+              lokasiList={lokasi}
+              uangJalanList={uangJalan}
+              p2hList={p2hList}
+              maintenanceList={maintenanceList}
+              kendalaList={kendalaList}
+              onSubmitP2H={handleSubmitP2H}
+              onStartPerjalanan={handleStartPerjalanan}
+              onMarkSelesaiMuat={handleMarkSelesaiMuat}
+              onMarkSelesaiBongkar={handleMarkSelesaiBongkar}
+              onSubmitKendala={handleSubmitKendala}
+              onSubmitPertanggungjawaban={handleSubmitPertanggungjawaban}
+            />
+          )}
+
+          {activeMenu === 'armada-hasil-p2h' && (
+            <HasilP2HPage
+              p2hList={p2hList}
+              maintenanceList={maintenanceList}
+              selectedP2HId={selectedP2HId}
+              onSelectP2H={setSelectedP2HId}
+              onCreateMaintenanceFromP2H={handleCreateMaintenanceFromP2H}
+              onOpenMaintenance={(maintId) => {
+                setSelectedMaintenanceId(maintId);
+                openMenu('armada-maintenance');
+              }}
+            />
+          )}
+
+          {activeMenu === 'armada-maintenance' && (
+            <MaintenancePage
+              maintenanceList={maintenanceList}
+              permintaanBarangList={permintaanBarang}
+              units={units}
+              selectedMaintenanceId={selectedMaintenanceId}
+              onSelectMaintenance={setSelectedMaintenanceId}
+              onCreateManualMaintenance={handleCreateManualMaintenance}
+              onReviewMaintenance={handleReviewMaintenance}
+              onUpdateWorkProgress={handleUpdateWorkProgress}
+              onCompleteRepairWork={handleCompleteRepairWork}
+              onReleaseUnitHold={handleReleaseUnitHold}
+              onCreatePermintaanBarang={handleCreatePermintaanBarang}
+              onUpdatePermintaanBarangItems={handleUpdatePermintaanBarangItems}
+              onOpenP2H={(p2hId) => {
+                setSelectedP2HId(p2hId);
+                openMenu('armada-hasil-p2h');
+              }}
+              onOpenUnitDetail={(uId) => {
+                setSelectedUnitId(uId);
+                openMenu('armada-master-unit');
+              }}
+            />
+          )}
+
+          {activeMenu === 'armada-permintaan-barang' && (
+            <PermintaanBarangPage
+              permintaanBarangList={permintaanBarang}
+              onUpdateItems={handleUpdatePermintaanBarangItems}
+              onOpenMaintenance={(maintId) => {
+                setSelectedMaintenanceId(maintId);
+                openMenu('armada-maintenance');
+              }}
+            />
+          )}
+
+          {activeMenu === 'armada-dashboard' && (
+            <section className="space-y-5">
+              {/* 4 Operational KPI Cards */}
               <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
                 <div className="t-card-accent p-5 rounded-2xl flex flex-col justify-between">
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-medium" style={{ color: 'var(--card-accent-muted)' }}>
-                      Total Unit Armada
+                    <span
+                      className="text-xs font-medium"
+                      style={{ color: 'var(--card-accent-muted)' }}
+                    >
+                      Unit Armada
                     </span>
                     <Truck className="w-5 h-5 text-white/85" />
                   </div>
                   <div className="text-2xl font-display text-white mt-2 tabular-nums">
                     {stats.total} Unit
                   </div>
-                  <div className="text-[11px] text-white/75 mt-2">
-                    {stats.aktif} Aktif &middot; {stats.total - stats.aktif} Nonaktif
+                  <div className="text-[11px] text-white/80 mt-2">
+                    {stats.aktif} Aktif &middot; {pelanggan.length} Pelanggan &middot;{' '}
+                    {lokasi.length} Lokasi
                   </div>
                 </div>
 
-                <div className="t-card p-5 rounded-2xl flex flex-col justify-between">
+                <div
+                  onClick={() => openMenu('armada-perjalanan')}
+                  className="t-card p-5 rounded-2xl flex flex-col justify-between cursor-pointer hover:shadow-md transition-shadow"
+                >
                   <div className="flex items-center justify-between">
-                    <span className="t-field-label">Sedang Beroperasi</span>
-                    <CheckCircle2 className="w-5 h-5" style={{ color: 'var(--status-ok-text)' }} />
-                  </div>
-                  <div
-                    className="text-2xl font-display mt-2 tabular-nums"
-                    style={{ color: 'var(--status-ok-text)' }}
-                  >
-                    {stats.beroperasi} Unit
-                  </div>
-                  <div className="text-[11px] t-muted mt-2 font-mono-num">
-                    Total muatan aktif: {stats.totalMuatan.toFixed(1).replace('.', ',')} ton
-                  </div>
-                </div>
-
-                <div className="t-card p-5 rounded-2xl flex flex-col justify-between">
-                  <div className="flex items-center justify-between">
-                    <span className="t-field-label">Stand-by di Pool</span>
-                    <Clock className="w-5 h-5 t-link" />
+                    <span className="t-field-label">Perjalanan Aktif</span>
+                    <Route className="w-5 h-5 t-link" />
                   </div>
                   <div className="text-2xl font-display t-text mt-2 tabular-nums">
-                    {stats.standby} Unit
+                    {stats.perjalananAktif} Trip
                   </div>
-                  <div className="text-[11px] t-muted mt-2">Siap ditugaskan untuk rute berikutnya</div>
+                  <div className="text-[11px] t-muted mt-2">
+                    {uangJalan.length} pengajuan uang jalan tercatat
+                  </div>
                 </div>
 
-                <div className="t-card p-5 rounded-2xl flex flex-col justify-between">
+                <div
+                  onClick={() => openMenu('armada-sewa-unit')}
+                  className="t-card p-5 rounded-2xl flex flex-col justify-between cursor-pointer hover:shadow-md transition-shadow"
+                >
                   <div className="flex items-center justify-between">
-                    <span className="t-field-label">Servis / Nonaktif</span>
+                    <span className="t-field-label">Unit Sedang Disewa</span>
+                    <KeyRound className="w-5 h-5 t-link" />
+                  </div>
+                  <div className="text-2xl font-display t-text mt-2 tabular-nums">
+                    {stats.sewaAktif} Unit
+                  </div>
+                  <div className="text-[11px] t-muted mt-2">
+                    {stats.sewaOverdue > 0
+                      ? `${stats.sewaOverdue} lewat jadwal, belum kembali`
+                      : 'Semua sesuai jadwal sewa'}
+                  </div>
+                </div>
+
+                <div
+                  onClick={() => openMenu('armada-hasil-p2h')}
+                  className="t-card p-5 rounded-2xl flex flex-col justify-between cursor-pointer hover:shadow-md transition-shadow"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="t-field-label">P2H Kritis &amp; Perbaikan</span>
                     <Wrench className="w-5 h-5" style={{ color: 'var(--status-warn-text)' }} />
                   </div>
                   <div
                     className="text-2xl font-display mt-2 tabular-nums"
-                    style={{ color: 'var(--status-warn-text)' }}
+                    style={{
+                      color:
+                        stats.p2hKritis > 0 ? 'var(--status-bad-text)' : 'var(--status-ok-text)',
+                    }}
                   >
-                    {stats.nonaktifServis} Unit
+                    {stats.p2hKritis} Kritis
                   </div>
-                  <div className="text-[11px] t-muted mt-2">Dalam perawatan atau nonaktif</div>
+                  <div className="text-[11px] t-muted mt-2">
+                    {stats.maintAktif} perbaikan aktif &middot; {kendalaList.length} laporan kendala
+                  </div>
                 </div>
               </div>
+
+              {/* Latest Laporan Kendala from Sopir (if any) */}
+              {kendalaList.length > 0 && (
+                <div className="t-card rounded-2xl p-4 space-y-2.5 text-xs">
+                  <div className="flex items-center justify-between">
+                    <div className="font-bold t-text inline-flex items-center gap-1.5">
+                      <AlertTriangle
+                        className="w-4 h-4"
+                        style={{ color: 'var(--status-warn-text)' }}
+                      />
+                      <span>Laporan Kendala Terbaru dari Sopir ({kendalaList.length})</span>
+                    </div>
+                  </div>
+                  <div className="divide-y t-border">
+                    {kendalaList.slice(0, 3).map((knd) => (
+                      <div
+                        key={knd.id}
+                        className="py-2 flex flex-wrap items-center justify-between gap-2"
+                      >
+                        <div>
+                          <span className="font-mono-num font-bold t-link">
+                            {knd.nomorLaporan}
+                          </span>{' '}
+                          <span className="font-semibold t-text">
+                            ({knd.kodeUnit} · {knd.sopirNama}) — {knd.kategori}:
+                          </span>{' '}
+                          <span className="t-muted">{knd.catatan}</span>
+                        </div>
+                        <span className="font-bold t-text">{knd.status}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {/* Fleet Monitoring Table */}
               <div className="t-card rounded-2xl overflow-hidden">
                 <div className="px-5 py-4 border-b t-border flex flex-wrap items-center justify-between gap-3">
                   <div>
-                    <h2 className="t-section-label">Pemantauan Status Armada</h2>
+                    <h2 className="t-section-label">Pemantauan Unit Armada</h2>
                     <p className="text-[11px] t-muted mt-0.5">
-                      Klik baris kendaraan untuk membuka <b>Detail Unit</b> pada Master Data.
+                      Klik baris kendaraan untuk membuka <b>Detail Unit</b> beserta seluruh riwayat
+                      Perjalanan, P2H, dan Perbaikan.
                     </p>
                   </div>
 
@@ -707,14 +2234,16 @@ export function ArmadaDashboardPage() {
                         type="text"
                         value={search}
                         onChange={(e) => setSearch(e.target.value)}
-                        placeholder="Cari kode unit / nopol / supir..."
+                        placeholder="Cari ARM-001 / nopol / supir..."
                         className="text-xs pl-8 pr-3 py-2 rounded-xl t-input w-56"
                       />
                     </div>
 
                     <select
                       value={statusFilter}
-                      onChange={(e) => setStatusFilter(e.target.value as 'ALL' | ArmadaOperationalStatus)}
+                      onChange={(e) =>
+                        setStatusFilter(e.target.value as 'ALL' | ArmadaOperationalStatus)
+                      }
                       aria-label="Filter status armada"
                       className="text-xs px-3 py-2 rounded-xl t-input font-semibold"
                     >
@@ -731,17 +2260,16 @@ export function ArmadaDashboardPage() {
                     <thead>
                       <tr className="t-subtle border-b t-border">
                         <th className="py-3.5 px-5 t-th-label">Unit &amp; No. Polisi</th>
-                        <th className="py-3.5 px-4 t-th-label">Jenis &amp; Merek</th>
-                        <th className="py-3.5 px-4 t-th-label">Lokasi &amp; Rute Terakhir</th>
-                        <th className="py-3.5 px-4 t-th-label text-right">Muatan</th>
-                        <th className="py-3.5 px-4 t-th-label text-center">Status</th>
+                        <th className="py-3.5 px-4 t-th-label">Jenis &amp; Supir</th>
+                        <th className="py-3.5 px-4 t-th-label">Lokasi &amp; Aktivitas</th>
+                        <th className="py-3.5 px-4 t-th-label">Status</th>
                         <th className="py-3.5 px-5 t-th-label text-right">Update</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y t-border">
                       {filteredDashboardUnits.length === 0 ? (
                         <tr>
-                          <td colSpan={6} className="p-6 text-center t-muted">
+                          <td colSpan={5} className="p-6 text-center t-muted">
                             Tidak ada unit armada yang cocok dengan filter pencarian.
                           </td>
                         </tr>
@@ -751,20 +2279,16 @@ export function ArmadaDashboardPage() {
                             unit.status === 'Nonaktif'
                               ? 'Servis'
                               : unit.statusOperasional || 'Stand-by';
-                          const statusClass =
-                            opStatus === 'Beroperasi'
-                              ? 't-status-ok'
-                              : opStatus === 'Stand-by'
-                                ? 't-status-info'
-                                : 't-status-warn';
-                          const merekModel = [unit.merek, unit.model].filter(Boolean).join(' ');
                           return (
                             <tr
                               key={unit.id}
-                              onClick={() => openMenu('armada-master-unit', unit.id)}
+                              onClick={() => {
+                                setSelectedUnitId(unit.id);
+                                openMenu('armada-master-unit');
+                              }}
                               className="t-row-hover cursor-pointer"
                             >
-                              <td className="py-3.5 px-5">
+                              <td className="py-3.5 px-5 whitespace-nowrap">
                                 <div className="font-bold font-mono-num t-link">
                                   {unit.kodeUnit}
                                 </div>
@@ -772,10 +2296,10 @@ export function ArmadaDashboardPage() {
                                   {unit.nomorPolisi}
                                 </div>
                               </td>
-                              <td className="py-3.5 px-4">
+                              <td className="py-3.5 px-4 whitespace-nowrap">
                                 <div className="font-semibold t-text">{unit.jenisKendaraan}</div>
                                 <div className="text-[11px] t-muted">
-                                  {merekModel || '-'}
+                                  {[unit.merek, unit.model].filter(Boolean).join(' ') || '-'}
                                   {unit.supirUtama && unit.supirUtama !== '-'
                                     ? ` · ${unit.supirUtama}`
                                     : ''}
@@ -790,20 +2314,26 @@ export function ArmadaDashboardPage() {
                                   {unit.ruteAktif || '-'}
                                 </div>
                               </td>
-                              <td className="py-3.5 px-4 text-right font-mono-num font-semibold t-text whitespace-nowrap">
-                                {unit.muatanTon && unit.muatanTon > 0
-                                  ? `${unit.muatanTon.toFixed(1).replace('.', ',')} ton`
-                                  : '-'}
-                              </td>
-                              <td className="py-3.5 px-4 text-center whitespace-nowrap">
+                              <td className="py-3.5 px-4 whitespace-nowrap">
                                 <span
-                                  className={`inline-block px-2.5 py-1 rounded-lg text-[11px] font-bold ${statusClass}`}
+                                  className="font-bold text-[11px]"
+                                  style={{
+                                    color:
+                                      unit.status === 'Nonaktif' || opStatus === 'Servis'
+                                        ? 'var(--status-warn-text)'
+                                        : opStatus === 'Beroperasi'
+                                          ? 'var(--status-ok-text)'
+                                          : 'var(--status-info-text)',
+                                  }}
                                 >
                                   {unit.status === 'Nonaktif' ? 'Nonaktif' : opStatus}
                                 </span>
                               </td>
                               <td className="py-3.5 px-5 text-right text-[11px] t-muted whitespace-nowrap">
-                                {unit.updateTerakhir || '-'}
+                                <span className="inline-flex items-center gap-1">
+                                  <Clock className="w-3 h-3" />
+                                  <span>{unit.updateTerakhir || '-'}</span>
+                                </span>
                               </td>
                             </tr>
                           );
