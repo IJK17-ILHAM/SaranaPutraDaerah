@@ -1,11 +1,18 @@
-import { CheckCircle2, Eye, EyeOff, KeyRound, LogIn } from 'lucide-react';
+import { CheckCircle2, Eye, EyeOff, KeyRound, LogIn, Truck } from 'lucide-react';
 import { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { loginWithSPS } from '../services/payrollApi';
 import { SPD_NAVY_GRADIENT, SpdLogoWordmark } from '../components/common/SpdLogo';
+import type { UserSession } from '../types/auth';
+import {
+  getArmadaUrlFromPortal,
+  getRequestedRedirectTarget,
+  isActiveSuperAdminSession,
+} from '../utils/portalAuth';
 
 export function LoginPage() {
   const { loginUser, showToast } = useApp();
+  const isArmadaRedirect = getRequestedRedirectTarget() === 'armada';
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -14,6 +21,24 @@ export function LoginPage() {
   const [infoTip, setInfoTip] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
+  const completeSignIn = (loggedUser: UserSession, welcomeMessage: string, toastKind: 'success' | 'info') => {
+    loginUser(loggedUser);
+    if (isArmadaRedirect) {
+      if (isActiveSuperAdminSession(loggedUser)) {
+        window.location.replace(getArmadaUrlFromPortal());
+        return;
+      }
+      const cleanUrl = `${window.location.pathname}${window.location.hash}`;
+      window.history.replaceState({}, '', cleanUrl);
+      showToast(
+        'Dashboard Armada khusus untuk role Super Admin. Anda diarahkan ke Portal Utama.',
+        'warning',
+      );
+      return;
+    }
+    showToast(welcomeMessage, toastKind);
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg('');
@@ -21,8 +46,11 @@ export function LoginPage() {
     try {
       const json = await loginWithSPS(email.trim(), password);
       if (json && json.status === 'ok' && json.user) {
-        loginUser(json.user);
-        showToast(`Selamat datang, ${json.user.nama || json.user.username || 'Admin'}.`, 'success');
+        completeSignIn(
+          json.user,
+          `Selamat datang, ${json.user.nama || json.user.username || 'Admin'}.`,
+          'success',
+        );
       } else {
         setErrorMsg((json && json.message) || 'Username/Email atau Password salah.');
       }
@@ -34,15 +62,18 @@ export function LoginPage() {
   };
 
   const handleDemoLogin = () => {
-    loginUser({
-      id: 'DEMO-01',
-      nama: 'Admin Preview SPD',
-      username: 'superadmin',
-      role: 'Super Admin',
-      status: 'Aktif',
-      isDemo: true,
-    });
-    showToast('Masuk dengan sesi Preview Admin. Data tetap disinkronkan dari SPS.', 'info');
+    completeSignIn(
+      {
+        id: 'DEMO-01',
+        nama: 'Admin Preview SPD',
+        username: 'superadmin',
+        role: 'Super Admin',
+        status: 'Aktif',
+        isDemo: true,
+      },
+      'Masuk dengan sesi Preview Admin. Data tetap disinkronkan dari SPS.',
+      'info',
+    );
   };
 
   return (
@@ -80,6 +111,16 @@ export function LoginPage() {
           <div className="mb-6">
             <h2 className="text-[24px] leading-[32px] font-display t-text">Masuk</h2>
           </div>
+
+          {isArmadaRedirect && (
+            <div className="mb-4 p-3 rounded-xl t-status-info text-xs font-medium flex items-start gap-2">
+              <Truck className="w-4 h-4 shrink-0 mt-0.5" />
+              <span>
+                Masuk dengan akun <b>Super Admin</b> untuk langsung kembali ke{' '}
+                <b>Sistem Operasional dan Pemantauan Armada</b>.
+              </span>
+            </div>
+          )}
 
           {errorMsg && (
             <div className="mb-4 p-3 rounded-xl t-status-bad text-xs font-semibold">

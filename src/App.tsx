@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { ConfirmModal } from './components/common/ConfirmModal';
 import { ToastContainer } from './components/common/ToastContainer';
 import { Sidebar } from './components/layout/Sidebar';
@@ -5,6 +6,11 @@ import { BatchSlipModal } from './components/payroll/BatchSlipModal';
 import { SlipModal } from './components/payroll/SlipModal';
 import { PrintPortal } from './components/print/PrintPortal';
 import { AppProvider, useApp } from './context/AppContext';
+import {
+  getArmadaUrlFromPortal,
+  getRequestedRedirectTarget,
+  isActiveSuperAdminSession,
+} from './utils/portalAuth';
 import { KasTonaseProvider } from './context/KasTonaseContext';
 import { PayrollProvider } from './context/PayrollContext';
 import { LoginPage } from './pages/LoginPage';
@@ -61,7 +67,20 @@ function ActivePageRouter() {
 }
 
 function PortalShell() {
-  const { user } = useApp();
+  const { user, showToast } = useApp();
+
+  useEffect(() => {
+    if (!user) return;
+    if (getRequestedRedirectTarget() !== 'armada') return;
+
+    if (isActiveSuperAdminSession(user)) {
+      window.location.replace(getArmadaUrlFromPortal());
+    } else {
+      const cleanUrl = `${window.location.pathname}${window.location.hash}`;
+      window.history.replaceState({}, '', cleanUrl);
+      showToast('Akses Dashboard Armada khusus untuk role Super Admin.', 'warning');
+    }
+  }, [showToast, user]);
 
   return (
     <>

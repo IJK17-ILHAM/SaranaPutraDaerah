@@ -1,4 +1,4 @@
-import { Check, LogOut, Menu, Palette, RefreshCw, X } from 'lucide-react';
+import { Check, LogOut, Menu, Palette, RefreshCw, Truck, X } from 'lucide-react';
 import { useState } from 'react';
 import type { ThemeId } from '../../config/constants';
 import { useApp } from '../../context/AppContext';
@@ -6,6 +6,7 @@ import { useKasTonase } from '../../context/KasTonaseContext';
 import { usePayroll } from '../../context/PayrollContext';
 import type { MenuId } from '../../types/auth';
 import { getInitials, isAdminRole } from '../../utils/format';
+import { getArmadaUrlFromPortal, isActiveSuperAdminSession } from '../../utils/portalAuth';
 import { MainMenuIcon } from '../common/MainMenuIcons';
 import { SPD_NAVY_GRADIENT, SpdLogoWordmark } from '../common/SpdLogo';
 
@@ -61,6 +62,7 @@ export function Sidebar() {
   const [mobileOpen, setMobileOpen] = useState(false);
 
   const canManageAccounts = isAdminRole(user?.role);
+  const canOpenArmada = isActiveSuperAdminSession(user);
   const userName = user?.nama || user?.username || user?.email || 'User';
   const userRole = user?.role || 'Staff';
   const initials = getInitials(userName);
@@ -169,6 +171,19 @@ export function Sidebar() {
                 </button>
               );
             })}
+            {canOpenArmada && (
+              <a
+                href={getArmadaUrlFromPortal()}
+                className="flex items-center gap-2 px-2.5 py-2 rounded-xl text-xs text-left whitespace-nowrap t-sidebar-btn col-span-2 border border-white/15"
+              >
+                <span className="w-7 h-7 rounded-full bg-white/10 flex items-center justify-center shrink-0">
+                  <Truck className="w-4 h-4" style={{ color: 'var(--accent-highlight)' }} />
+                </span>
+                <span className="truncate font-semibold" style={{ color: 'var(--accent-highlight)' }}>
+                  Dashboard Armada
+                </span>
+              </a>
+            )}
           </div>
           <div className="pt-2 border-t border-white/10 flex items-center justify-between gap-2">
             <div className="flex items-center gap-1.5">
@@ -398,6 +413,43 @@ export function Sidebar() {
                 </div>
               );
             })}
+            {canOpenArmada && (
+              <div className={`relative group ${expanded ? 'px-3 pt-1' : 'flex justify-center pt-1'}`}>
+                <a
+                  href={getArmadaUrlFromPortal()}
+                  title={!expanded ? 'Dashboard Armada' : undefined}
+                  className={`flex items-center transition-all duration-150 ${
+                    expanded
+                      ? 'w-full gap-2.5 px-2.5 py-2 rounded-2xl text-[13px] t-sidebar-btn text-left border border-white/15'
+                      : 'w-11 h-11 rounded-2xl justify-center hover:bg-white/10 border border-white/15'
+                  }`}
+                >
+                  <span
+                    className={`flex items-center justify-center shrink-0 ${
+                      expanded ? 'w-8 h-8' : 'w-9 h-9'
+                    }`}
+                  >
+                    <Truck className="w-5 h-5" style={{ color: 'var(--accent-highlight)' }} />
+                  </span>
+                  {expanded && (
+                    <span
+                      className="text-[13px] font-semibold truncate"
+                      style={{ color: 'var(--accent-highlight)' }}
+                    >
+                      Dashboard Armada
+                    </span>
+                  )}
+                </a>
+                {!expanded && (
+                  <div
+                    role="tooltip"
+                    className="pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-150 absolute left-full ml-3 top-1/2 -translate-y-1/2 z-40 px-2.5 py-1.5 rounded-xl t-sidebar text-xs font-semibold text-white whitespace-nowrap shadow-lg border border-white/10"
+                  >
+                    Dashboard Armada
+                  </div>
+                )}
+              </div>
+            )}
           </nav>
 
           {/* Bottom Utility Stack: Sync, Theme, User Avatar, Logout */}
