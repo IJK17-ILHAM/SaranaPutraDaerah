@@ -11,6 +11,7 @@ import {
   getArmadaUrlFromPortal,
   getRequestedRedirectTarget,
   isArmadaOnlySession,
+  isArmadaSessionLocked,
 } from './utils/portalAuth';
 import { KasTonaseProvider } from './context/KasTonaseContext';
 import { PayrollProvider } from './context/PayrollContext';
@@ -82,7 +83,7 @@ function PortalShell() {
       }
       return;
     }
-    if (isArmadaOnlySession(user)) {
+    if (isArmadaOnlySession(user) || (isArmadaSessionLocked() && canAccessArmadaSession(user))) {
       window.location.replace(getArmadaUrlFromPortal());
     }
   }, [showToast, user]);

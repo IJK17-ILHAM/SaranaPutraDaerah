@@ -11,6 +11,7 @@ import {
   Wallet,
 } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import { ArmadaMenuIcon } from '../../components/armada/ArmadaMenuIcons';
 import type {
   ArmadaLokasi,
   ArmadaPelanggan,
@@ -294,19 +295,26 @@ export function UangJalanPage({
                 {selectedUj.nomorUangJalan}
               </span>
             </div>
-            <h2 className="text-xl sm:text-2xl font-display t-text">
-              {selectedUj.nomorUangJalan} &mdash; {prj?.nomorPenugasan || '-'}
-            </h2>
-            <div className="flex flex-wrap items-center gap-2 text-xs t-muted">
-              <span className="font-mono-num font-semibold t-text">
-                {unit?.kodeUnit || '-'} ({unit?.nomorPolisi || '-'})
-              </span>
-              <span aria-hidden="true">&middot;</span>
-              <span>Sopir: {prj?.sopirNama || '-'}</span>
-              <span aria-hidden="true">&middot;</span>
-              <span>
-                {muat?.namaLokasi || '-'} &rarr; {bongkar?.namaLokasi || '-'}
-              </span>
+            <div className="flex items-start gap-3 pt-0.5">
+              <div className="w-11 h-11 rounded-xl t-subtle border t-border flex items-center justify-center shrink-0">
+                <ArmadaMenuIcon id="armada-uang-jalan" size={30} />
+              </div>
+              <div>
+                <h2 className="text-lg sm:text-xl font-display font-bold t-text leading-snug">
+                  {selectedUj.nomorUangJalan} &mdash; {prj?.nomorPenugasan || '-'}
+                </h2>
+                <div className="flex flex-wrap items-center gap-2 text-xs t-muted mt-0.5">
+                  <span className="font-mono-num font-semibold t-text">
+                    {unit?.kodeUnit || '-'} ({unit?.nomorPolisi || '-'})
+                  </span>
+                  <span aria-hidden="true">&middot;</span>
+                  <span>Sopir: {prj?.sopirNama || '-'}</span>
+                  <span aria-hidden="true">&middot;</span>
+                  <span>
+                    {muat?.namaLokasi || '-'} &rarr; {bongkar?.namaLokasi || '-'}
+                  </span>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -844,18 +852,21 @@ export function UangJalanPage({
   return (
     <section className="space-y-5">
       <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <div className="text-xs font-medium t-muted">
-            Perjalanan &amp; Sewa <span aria-hidden="true">/</span>{' '}
-            <span className="t-link font-semibold">Uang Jalan</span>
+        <div className="flex items-start gap-3">
+          <div className="w-11 h-11 rounded-xl t-subtle border t-border flex items-center justify-center shrink-0">
+            <ArmadaMenuIcon id="armada-uang-jalan" size={30} />
           </div>
-          <h2 className="text-xl sm:text-2xl font-display t-text mt-1">Uang Jalan Perjalanan</h2>
-          <p className="text-xs t-muted mt-1 max-w-2xl">
-            Kelola alur uang jalan mulai dari <b>Diajukan</b> (Admin Armada), <b>Dicairkan</b>{' '}
-            (Finance &rarr; tercatat otomatis di Kas &amp; Tonase), <b>Dipertanggungjawabkan</b>,
-            hingga <b>Selesai</b>. Pengajuan baru dimulai dari tombol <b>Ajukan Uang Jalan</b> pada
-            Detail Perjalanan.
-          </p>
+          <div>
+            <h2 className="text-base sm:text-lg font-display font-bold t-text leading-snug">
+              Uang Jalan Perjalanan
+            </h2>
+            <p className="text-xs t-muted mt-0.5 max-w-2xl">
+              Kelola alur uang jalan mulai dari <b>Diajukan</b> (Admin Armada), <b>Dicairkan</b>{' '}
+              (Finance &rarr; tercatat otomatis di Kas &amp; Tonase), <b>Dipertanggungjawabkan</b>,
+              hingga <b>Selesai</b>. Pengajuan baru dimulai dari tombol <b>Ajukan Uang Jalan</b> pada
+              Detail Perjalanan.
+            </p>
+          </div>
         </div>
       </div>
 

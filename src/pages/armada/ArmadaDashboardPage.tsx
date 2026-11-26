@@ -1,6 +1,5 @@
 import {
   AlertTriangle,
-  ArrowLeft,
   Banknote,
   Building2,
   CheckCircle2,
@@ -116,11 +115,12 @@ import { getTodayISO } from '../../utils/format';
 import {
   canAccessArmadaSession,
   clearStoredUserSession,
-  getPortalBaseUrlFromArmada,
   getPortalLoginUrlFromArmada,
   isActiveSopirSession,
+  markArmadaSessionLocked,
   readStoredUserSession,
 } from '../../utils/portalAuth';
+import { ArmadaMenuIcon } from '../../components/armada/ArmadaMenuIcons';
 import { AkunArmadaPage } from './AkunArmadaPage';
 import { LokasiPage } from './LokasiPage';
 import { HasilP2HPage, MaintenancePage, PermintaanBarangPage } from './P2HMaintenancePage';
@@ -141,18 +141,34 @@ const THEME_LABELS: Record<ThemeId, string> = {
 
 const MENU_TITLE_MAP: Record<ArmadaMenuId, string> = {
   'armada-dashboard': 'Dashboard Armada',
-  'armada-tugas-saya': 'Mode Sopir — Tugas Saya',
-  'armada-perjalanan': 'Perjalanan & Sewa → Perjalanan',
-  'armada-uang-jalan': 'Perjalanan & Sewa → Uang Jalan',
-  'armada-sewa-unit': 'Perjalanan & Sewa → Sewa Unit',
-  'armada-hasil-p2h': 'P2H Kendaraan → Hasil P2H',
-  'armada-maintenance': 'Maintenance → Pengajuan Perbaikan',
-  'armada-permintaan-barang': 'Maintenance → Permintaan Barang',
-  'armada-master-unit': 'Master Data → Unit Armada',
-  'armada-master-pelanggan': 'Master Data → Pelanggan',
-  'armada-master-lokasi': 'Master Data → Lokasi Muat–Bongkar',
-  'armada-master-tarif': 'Master Data → Tarif',
-  'armada-akun': 'Pengaturan → Kelola Akun Armada',
+  'armada-tugas-saya': 'Tugas Saya (HP Sopir)',
+  'armada-perjalanan': 'Perjalanan',
+  'armada-uang-jalan': 'Uang Jalan',
+  'armada-sewa-unit': 'Sewa Unit',
+  'armada-hasil-p2h': 'Hasil P2H',
+  'armada-maintenance': 'Pengajuan Perbaikan',
+  'armada-permintaan-barang': 'Permintaan Barang',
+  'armada-master-unit': 'Unit Armada',
+  'armada-master-pelanggan': 'Pelanggan',
+  'armada-master-lokasi': 'Lokasi Muat–Bongkar',
+  'armada-master-tarif': 'Tarif',
+  'armada-akun': 'Kelola Akun Armada',
+};
+
+const MENU_GROUP_MAP: Record<ArmadaMenuId, string> = {
+  'armada-dashboard': 'Operasional',
+  'armada-tugas-saya': 'Operasional',
+  'armada-perjalanan': 'Perjalanan & Sewa',
+  'armada-uang-jalan': 'Perjalanan & Sewa',
+  'armada-sewa-unit': 'Perjalanan & Sewa',
+  'armada-hasil-p2h': 'P2H & Maintenance',
+  'armada-maintenance': 'P2H & Maintenance',
+  'armada-permintaan-barang': 'P2H & Maintenance',
+  'armada-master-unit': 'Master Data',
+  'armada-master-pelanggan': 'Master Data',
+  'armada-master-lokasi': 'Master Data',
+  'armada-master-tarif': 'Master Data',
+  'armada-akun': 'Pengaturan Armada',
 };
 
 export function ArmadaDashboardPage() {
@@ -225,6 +241,10 @@ export function ArmadaDashboardPage() {
   useEffect(() => {
     if (!session) {
       window.location.replace(getPortalLoginUrlFromArmada());
+      return;
+    }
+    if (canAccessArmadaSession(session)) {
+      markArmadaSessionLocked();
     }
   }, [session]);
 
@@ -1815,10 +1835,6 @@ export function ArmadaDashboardPage() {
     window.location.replace(getPortalLoginUrlFromArmada());
   };
 
-  const handleBackToPortal = () => {
-    window.location.href = getPortalBaseUrlFromArmada();
-  };
-
   const openMenu = (menu: ArmadaMenuId) => {
     setActiveMenu(menu);
     setMobileMenuOpen(false);
@@ -1841,7 +1857,7 @@ export function ArmadaDashboardPage() {
             Sistem Operasional dan Pemantauan Armada
           </h1>
           <p className="text-xs t-muted leading-relaxed">
-            Sesi login belum aktif. Mengarahkan ke halaman masuk Portal SPD...
+            Sesi login belum aktif. Mengarahkan ke halaman masuk...
           </p>
           <a
             href={getPortalLoginUrlFromArmada()}
@@ -1885,14 +1901,6 @@ export function ArmadaDashboardPage() {
           </div>
 
           <div className="flex flex-wrap items-center justify-end gap-2.5 pt-2 border-t t-border">
-            <button
-              type="button"
-              onClick={handleBackToPortal}
-              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl t-btn-secondary text-xs font-semibold"
-            >
-              <ArrowLeft className="w-3.5 h-3.5" />
-              <span>Kembali ke Portal SPD</span>
-            </button>
             <button
               type="button"
               onClick={handleLogoutAndSwitch}
@@ -2078,21 +2086,20 @@ export function ArmadaDashboardPage() {
         return (
           <div key={group.title} className="space-y-1">
             <div
-              className="px-2.5 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider"
+              className="px-2.5 flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider"
               style={{ color: 'var(--text-sidebar-muted)' }}
             >
-              <GroupIcon className="w-3 h-3" />
+              <GroupIcon className="w-3.5 h-3.5 shrink-0" />
               <span>{group.title}</span>
             </div>
             {group.items.map((item) => {
-              const Icon = item.icon;
               const active = activeMenu === item.id;
               return (
                 <button
                   key={item.id}
                   type="button"
                   onClick={() => openMenu(item.id)}
-                  className={`w-full flex items-center justify-between gap-2 px-3 py-2 rounded-xl text-xs font-semibold transition-colors ${
+                  className={`w-full flex items-center justify-between gap-2 px-3 py-2 rounded-xl text-[13px] leading-snug font-semibold transition-colors ${
                     active ? 'font-bold shadow-xs' : 't-sidebar-btn'
                   }`}
                   style={
@@ -2101,13 +2108,13 @@ export function ArmadaDashboardPage() {
                       : undefined
                   }
                 >
-                  <span className="inline-flex items-center gap-2 truncate">
-                    <Icon className="w-4 h-4 shrink-0" />
+                  <span className="inline-flex items-center gap-2.5 min-w-0">
+                    <ArmadaMenuIcon id={item.id} size={22} onDark={!active} />
                     <span className="truncate">{item.label}</span>
                   </span>
                   {typeof item.count === 'number' && (
                     <span
-                      className={`px-1.5 py-0.5 rounded-md text-[10px] font-mono-num font-bold ${
+                      className={`px-1.5 py-0.5 rounded-md text-[11px] font-mono-num font-bold shrink-0 ${
                         active ? 'bg-black/15' : 'bg-white/10 text-white/85'
                       }`}
                     >
@@ -2224,29 +2231,20 @@ export function ArmadaDashboardPage() {
               <button
                 type="button"
                 onClick={handleCycleTheme}
-                className="inline-flex items-center justify-center gap-1 px-2 py-2 rounded-xl bg-white/10 hover:bg-white/15 text-[11px] font-semibold text-white"
+                className="inline-flex items-center justify-center gap-1.5 px-2.5 py-2 rounded-xl bg-white/10 hover:bg-white/15 text-xs font-semibold text-white"
               >
-                <Palette className="w-3.5 h-3.5" />
+                <Palette className="w-4 h-4 shrink-0" />
                 <span>{THEME_LABELS[theme]}</span>
               </button>
               <button
                 type="button"
-                onClick={handleBackToPortal}
-                className="inline-flex items-center justify-center gap-1 px-2 py-2 rounded-xl bg-white/10 hover:bg-white/15 text-[11px] font-semibold text-white"
+                onClick={handleLogoutAndSwitch}
+                className="inline-flex items-center justify-center gap-1.5 px-2.5 py-2 rounded-xl bg-white/10 hover:bg-white/15 text-xs font-semibold text-white/90"
               >
-                <ArrowLeft className="w-3.5 h-3.5" />
-                <span>Portal SPD</span>
+                <LogOut className="w-4 h-4 shrink-0" />
+                <span>Keluar</span>
               </button>
             </div>
-
-            <button
-              type="button"
-              onClick={handleLogoutAndSwitch}
-              className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-white/10 hover:bg-white/15 text-xs font-semibold text-white/85"
-            >
-              <LogOut className="w-3.5 h-3.5" />
-              <span>Keluar</span>
-            </button>
           </div>
         </div>
       </aside>
@@ -2312,24 +2310,16 @@ export function ArmadaDashboardPage() {
               <button
                 type="button"
                 onClick={handleCycleTheme}
-                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-white/10 text-xs text-white font-semibold"
+                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-white/10 text-xs text-white font-semibold"
               >
                 <Palette className="w-3.5 h-3.5" />
                 <span>{THEME_LABELS[theme]}</span>
-              </button>
-              <button
-                type="button"
-                onClick={handleBackToPortal}
-                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-white/10 text-xs text-white font-semibold"
-              >
-                <ArrowLeft className="w-3.5 h-3.5" />
-                <span>Portal SPD</span>
               </button>
             </div>
             <button
               type="button"
               onClick={handleLogoutAndSwitch}
-              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-white/10 text-xs text-white/85"
+              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-white/10 text-xs text-white/85 font-semibold"
             >
               <LogOut className="w-3.5 h-3.5" />
               <span>Keluar</span>
@@ -2341,25 +2331,35 @@ export function ArmadaDashboardPage() {
       {/* Main Content Area */}
       <main className="flex-1 p-5 sm:p-6 lg:p-8 overflow-y-auto">
         <div className="max-w-7xl mx-auto space-y-5">
-          {/* Clean Top Strip */}
-          <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b t-border">
-            <div>
-              <h1 className="text-base sm:text-lg font-display t-text">
-                Sistem Operasional dan Pemantauan Armada
-              </h1>
-              <p className="text-[11px] t-muted">
-                PT. Sarana Putra Daerah &middot; {MENU_TITLE_MAP[activeMenu]}
-              </p>
+          {/* Main Module Header Strip */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b t-border">
+            <div className="flex items-center gap-3.5 min-w-0">
+              <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl t-subtle border t-border flex items-center justify-center shrink-0">
+                <ArmadaMenuIcon id={activeMenu} size={46} onDark={theme === 'dark'} />
+              </div>
+              <div className="min-w-0">
+                <div className="text-xs t-muted flex items-center gap-1.5 mb-0.5">
+                  <span>Sistem Armada</span>
+                  <span aria-hidden="true">/</span>
+                  <span className="t-text font-medium">{MENU_GROUP_MAP[activeMenu]}</span>
+                </div>
+                <h1 className="text-xl sm:text-2xl leading-tight font-display font-bold tracking-[-0.02em] t-text truncate">
+                  {MENU_TITLE_MAP[activeMenu]}
+                </h1>
+                <p className="text-xs t-muted mt-0.5 truncate">
+                  Sistem Operasional dan Pemantauan Armada &middot; PT. Sarana Putra Daerah
+                </p>
+              </div>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 shrink-0">
               <button
                 type="button"
                 onClick={() => openMenu('armada-tugas-saya')}
-                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap ${
+                className={`inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-semibold whitespace-nowrap ${
                   activeMenu === 'armada-tugas-saya' ? 't-btn-primary' : 't-btn-secondary'
                 }`}
               >
-                <Smartphone className="w-3.5 h-3.5" />
+                <Smartphone className="w-4 h-4 shrink-0" />
                 <span>Mode HP Sopir</span>
               </button>
             </div>
@@ -2588,20 +2588,24 @@ export function ArmadaDashboardPage() {
             <section className="space-y-5">
               {/* 4 Operational KPI Cards */}
               <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-                <div className="t-card-accent p-5 rounded-2xl flex flex-col justify-between">
-                  <div className="flex items-center justify-between">
-                    <span
-                      className="text-xs font-medium"
-                      style={{ color: 'var(--card-accent-muted)' }}
-                    >
-                      Unit Armada
-                    </span>
-                    <Truck className="w-5 h-5 text-white/85" />
+                <div className="t-card-accent p-5 rounded-2xl flex flex-col justify-between gap-2">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <span
+                        className="text-xs font-semibold"
+                        style={{ color: 'var(--card-accent-muted)' }}
+                      >
+                        Unit Armada
+                      </span>
+                      <div className="text-2xl sm:text-[26px] font-display font-bold text-white mt-1.5 tabular-nums leading-tight">
+                        {stats.total} Unit
+                      </div>
+                    </div>
+                    <div className="w-11 h-11 rounded-xl bg-white/15 border border-white/15 flex items-center justify-center shrink-0">
+                      <ArmadaMenuIcon id="armada-master-unit" size={30} onDark={true} />
+                    </div>
                   </div>
-                  <div className="text-2xl font-display text-white mt-2 tabular-nums">
-                    {stats.total} Unit
-                  </div>
-                  <div className="text-[11px] text-white/80 mt-2">
+                  <div className="text-xs text-white/80">
                     {stats.aktif} Aktif &middot; {pelanggan.length} Pelanggan &middot;{' '}
                     {lokasi.length} Lokasi
                   </div>
@@ -2609,32 +2613,40 @@ export function ArmadaDashboardPage() {
 
                 <div
                   onClick={() => openMenu('armada-perjalanan')}
-                  className="t-card p-5 rounded-2xl flex flex-col justify-between cursor-pointer hover:shadow-md transition-shadow"
+                  className="t-card p-5 rounded-2xl flex flex-col justify-between gap-2 cursor-pointer hover:shadow-md transition-shadow"
                 >
-                  <div className="flex items-center justify-between">
-                    <span className="t-field-label">Perjalanan Aktif</span>
-                    <Route className="w-5 h-5 t-link" />
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <span className="t-field-label">Perjalanan Aktif</span>
+                      <div className="text-2xl sm:text-[26px] font-display font-bold t-text mt-1.5 tabular-nums leading-tight">
+                        {stats.perjalananAktif} Trip
+                      </div>
+                    </div>
+                    <div className="w-11 h-11 rounded-xl t-subtle border t-border flex items-center justify-center shrink-0">
+                      <ArmadaMenuIcon id="armada-perjalanan" size={30} onDark={theme === 'dark'} />
+                    </div>
                   </div>
-                  <div className="text-2xl font-display t-text mt-2 tabular-nums">
-                    {stats.perjalananAktif} Trip
-                  </div>
-                  <div className="text-[11px] t-muted mt-2">
+                  <div className="text-xs t-muted">
                     {uangJalan.length} pengajuan uang jalan tercatat
                   </div>
                 </div>
 
                 <div
                   onClick={() => openMenu('armada-sewa-unit')}
-                  className="t-card p-5 rounded-2xl flex flex-col justify-between cursor-pointer hover:shadow-md transition-shadow"
+                  className="t-card p-5 rounded-2xl flex flex-col justify-between gap-2 cursor-pointer hover:shadow-md transition-shadow"
                 >
-                  <div className="flex items-center justify-between">
-                    <span className="t-field-label">Unit Sedang Disewa</span>
-                    <KeyRound className="w-5 h-5 t-link" />
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <span className="t-field-label">Unit Sedang Disewa</span>
+                      <div className="text-2xl sm:text-[26px] font-display font-bold t-text mt-1.5 tabular-nums leading-tight">
+                        {stats.sewaAktif} Unit
+                      </div>
+                    </div>
+                    <div className="w-11 h-11 rounded-xl t-subtle border t-border flex items-center justify-center shrink-0">
+                      <ArmadaMenuIcon id="armada-sewa-unit" size={30} onDark={theme === 'dark'} />
+                    </div>
                   </div>
-                  <div className="text-2xl font-display t-text mt-2 tabular-nums">
-                    {stats.sewaAktif} Unit
-                  </div>
-                  <div className="text-[11px] t-muted mt-2">
+                  <div className="text-xs t-muted">
                     {stats.sewaOverdue > 0
                       ? `${stats.sewaOverdue} lewat jadwal, belum kembali`
                       : 'Semua sesuai jadwal sewa'}
@@ -2643,22 +2655,28 @@ export function ArmadaDashboardPage() {
 
                 <div
                   onClick={() => openMenu('armada-hasil-p2h')}
-                  className="t-card p-5 rounded-2xl flex flex-col justify-between cursor-pointer hover:shadow-md transition-shadow"
+                  className="t-card p-5 rounded-2xl flex flex-col justify-between gap-2 cursor-pointer hover:shadow-md transition-shadow"
                 >
-                  <div className="flex items-center justify-between">
-                    <span className="t-field-label">P2H Kritis &amp; Perbaikan</span>
-                    <Wrench className="w-5 h-5" style={{ color: 'var(--status-warn-text)' }} />
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <span className="t-field-label">P2H Kritis &amp; Perbaikan</span>
+                      <div
+                        className="text-2xl sm:text-[26px] font-display font-bold mt-1.5 tabular-nums leading-tight"
+                        style={{
+                          color:
+                            stats.p2hKritis > 0
+                              ? 'var(--status-bad-text)'
+                              : 'var(--status-ok-text)',
+                        }}
+                      >
+                        {stats.p2hKritis} Kritis
+                      </div>
+                    </div>
+                    <div className="w-11 h-11 rounded-xl t-subtle border t-border flex items-center justify-center shrink-0">
+                      <ArmadaMenuIcon id="armada-maintenance" size={30} onDark={theme === 'dark'} />
+                    </div>
                   </div>
-                  <div
-                    className="text-2xl font-display mt-2 tabular-nums"
-                    style={{
-                      color:
-                        stats.p2hKritis > 0 ? 'var(--status-bad-text)' : 'var(--status-ok-text)',
-                    }}
-                  >
-                    {stats.p2hKritis} Kritis
-                  </div>
-                  <div className="text-[11px] t-muted mt-2">
+                  <div className="text-xs t-muted">
                     {stats.maintAktif} perbaikan aktif &middot; {kendalaList.length} laporan kendala
                   </div>
                 </div>
@@ -2701,12 +2719,19 @@ export function ArmadaDashboardPage() {
               {/* Fleet Monitoring Table */}
               <div className="t-card rounded-2xl overflow-hidden">
                 <div className="px-5 py-4 border-b t-border flex flex-wrap items-center justify-between gap-3">
-                  <div>
-                    <h2 className="t-section-label">Pemantauan Unit Armada</h2>
-                    <p className="text-[11px] t-muted mt-0.5">
-                      Klik baris kendaraan untuk membuka <b>Detail Unit</b> beserta seluruh riwayat
-                      Perjalanan, P2H, dan Perbaikan.
-                    </p>
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl t-subtle border t-border flex items-center justify-center shrink-0">
+                      <ArmadaMenuIcon id="armada-master-unit" size={26} onDark={theme === 'dark'} />
+                    </div>
+                    <div>
+                      <h2 className="text-sm sm:text-base font-display font-bold t-text leading-snug">
+                        Pemantauan Unit Armada
+                      </h2>
+                      <p className="text-xs t-muted mt-0.5">
+                        Klik baris kendaraan untuk membuka <b>Detail Unit</b> beserta seluruh riwayat
+                        Perjalanan, P2H, dan Perbaikan.
+                      </p>
+                    </div>
                   </div>
 
                   <div className="flex flex-wrap items-center gap-2">

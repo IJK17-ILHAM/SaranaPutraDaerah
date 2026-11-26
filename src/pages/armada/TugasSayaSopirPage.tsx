@@ -20,6 +20,7 @@ import {
   Wallet,
 } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import { ArmadaMenuIcon } from '../../components/armada/ArmadaMenuIcons';
 import { ARMADA_SOPIR_LIST, P2H_CHECKLIST_TEMPLATE } from '../../data/armadaSeed';
 import type {
   ArmadaKendalaKategori,
@@ -300,12 +301,19 @@ export function TugasSayaSopirPage({
     <section className="max-w-2xl mx-auto space-y-4 pb-8">
       {/* Driver Header Bar */}
       <div className="t-card rounded-2xl p-4 flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <div className="text-[11px] font-semibold t-link">Mode HP Sopir &middot; Portal Armada</div>
-          <h2 className="text-lg font-display t-text mt-0.5">{activeSopir}</h2>
-          <p className="text-[11px] t-muted">
-            Hanya menampilkan tugas &amp; unit yang ditugaskan kepada akun ini.
-          </p>
+        <div className="flex items-center gap-3">
+          <div className="w-11 h-11 rounded-xl t-subtle border t-border flex items-center justify-center shrink-0">
+            <ArmadaMenuIcon id="armada-tugas-saya" size={30} />
+          </div>
+          <div>
+            <div className="text-[11px] font-semibold t-link">Mode HP Sopir &middot; Sistem Armada</div>
+            <h2 className="text-base sm:text-lg font-display font-bold t-text leading-snug">
+              {activeSopir}
+            </h2>
+            <p className="text-xs t-muted">
+              Hanya menampilkan tugas &amp; unit yang ditugaskan kepada akun ini.
+            </p>
+          </div>
         </div>
 
         {/* Allow Super Admin testing to switch active Sopir account */}

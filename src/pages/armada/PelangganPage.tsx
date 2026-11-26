@@ -14,6 +14,7 @@ import {
   User,
 } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import { ArmadaMenuIcon } from '../../components/armada/ArmadaMenuIcons';
 import { PelangganFormModal } from '../../components/armada/PelangganFormModal';
 import type {
   ArmadaLokasi,
@@ -145,26 +146,33 @@ export function PelangganPage({
                 {selectedPelanggan.idPelanggan}
               </span>
             </div>
-            <h2 className="text-xl sm:text-2xl font-display t-text">
-              {selectedPelanggan.namaPt}
-            </h2>
-            <div className="flex flex-wrap items-center gap-2 text-xs t-muted">
-              <span className="font-mono-num font-semibold t-text">
-                {selectedPelanggan.idPelanggan}
-              </span>
-              <span aria-hidden="true">&middot;</span>
-              <span>PIC: {selectedPelanggan.pic}</span>
-              <span aria-hidden="true">&middot;</span>
-              <span className="font-mono-num">{selectedPelanggan.kontak}</span>
-              <span aria-hidden="true">&middot;</span>
-              <span
-                className="font-bold"
-                style={{
-                  color: isAktif ? 'var(--status-ok-text)' : 'var(--status-bad-text)',
-                }}
-              >
-                {selectedPelanggan.status}
-              </span>
+            <div className="flex items-start gap-3 pt-0.5">
+              <div className="w-11 h-11 rounded-xl t-subtle border t-border flex items-center justify-center shrink-0">
+                <ArmadaMenuIcon id="armada-master-pelanggan" size={30} />
+              </div>
+              <div>
+                <h2 className="text-lg sm:text-xl font-display font-bold t-text leading-snug">
+                  {selectedPelanggan.namaPt}
+                </h2>
+                <div className="flex flex-wrap items-center gap-2 text-xs t-muted mt-0.5">
+                  <span className="font-mono-num font-semibold t-text">
+                    {selectedPelanggan.idPelanggan}
+                  </span>
+                  <span aria-hidden="true">&middot;</span>
+                  <span>PIC: {selectedPelanggan.pic}</span>
+                  <span aria-hidden="true">&middot;</span>
+                  <span className="font-mono-num">{selectedPelanggan.kontak}</span>
+                  <span aria-hidden="true">&middot;</span>
+                  <span
+                    className="font-bold"
+                    style={{
+                      color: isAktif ? 'var(--status-ok-text)' : 'var(--status-bad-text)',
+                    }}
+                  >
+                    {selectedPelanggan.status}
+                  </span>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -409,17 +417,20 @@ export function PelangganPage({
   return (
     <section className="space-y-5">
       <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <div className="text-xs font-medium t-muted">
-            Master Data <span aria-hidden="true">/</span>{' '}
-            <span className="t-link font-semibold">Pelanggan</span>{' '}
-            <span aria-hidden="true">&middot;</span> Tab SPS: Pelanggan
+        <div className="flex items-start gap-3">
+          <div className="w-11 h-11 rounded-xl t-subtle border t-border flex items-center justify-center shrink-0">
+            <ArmadaMenuIcon id="armada-master-pelanggan" size={30} />
           </div>
-          <h2 className="text-xl sm:text-2xl font-display t-text mt-1">Master Pelanggan</h2>
-          <p className="text-xs t-muted mt-1 max-w-2xl">
-            Catat identitas perusahaan, PIC, dan kontak sekali saja agar langsung tersedia saat
-            memetakan lokasi muat–bongkar, tarif, dan surat jalan perjalanan.
-          </p>
+          <div>
+            <div className="text-[11px] font-semibold t-link">Tab SPS: Pelanggan</div>
+            <h2 className="text-base sm:text-lg font-display font-bold t-text leading-snug">
+              Daftar Master Pelanggan
+            </h2>
+            <p className="text-xs t-muted mt-0.5 max-w-2xl">
+              Catat identitas perusahaan, PIC, dan kontak sekali saja agar langsung tersedia saat
+              memetakan lokasi muat–bongkar, tarif, dan surat jalan perjalanan.
+            </p>
+          </div>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">

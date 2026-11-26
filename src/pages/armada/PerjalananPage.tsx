@@ -15,6 +15,7 @@ import {
   X,
 } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import { ArmadaMenuIcon } from '../../components/armada/ArmadaMenuIcons';
 import { ARMADA_SOPIR_LIST, generateNextArmadaCode } from '../../data/armadaSeed';
 import type {
   ArmadaLokasi,
@@ -358,21 +359,30 @@ export function PerjalananPage({
                 {selectedPerjalanan.nomorPenugasan}
               </span>
             </div>
-            <h2 className="text-xl sm:text-2xl font-display t-text">
-              {selectedPerjalanan.nomorPenugasan} &mdash; {unit?.kodeUnit || '-'}{' '}
-              <span className="text-base font-mono-num t-muted">({unit?.nomorPolisi || '-'})</span>
-            </h2>
-            <div className="flex flex-wrap items-center gap-2 text-xs t-muted">
-              <span className="font-semibold t-text">{plg?.namaPt || '-'}</span>
-              <span aria-hidden="true">&middot;</span>
-              <span>Sopir: {selectedPerjalanan.sopirNama}</span>
-              <span aria-hidden="true">&middot;</span>
-              <span
-                className="font-bold"
-                style={{ color: statusTone(selectedPerjalanan.status) }}
-              >
-                {selectedPerjalanan.status}
-              </span>
+            <div className="flex items-start gap-3 pt-0.5">
+              <div className="w-11 h-11 rounded-xl t-subtle border t-border flex items-center justify-center shrink-0">
+                <ArmadaMenuIcon id="armada-perjalanan" size={30} />
+              </div>
+              <div>
+                <h2 className="text-lg sm:text-xl font-display font-bold t-text leading-snug">
+                  {selectedPerjalanan.nomorPenugasan} &mdash; {unit?.kodeUnit || '-'}{' '}
+                  <span className="text-sm font-mono-num t-muted">
+                    ({unit?.nomorPolisi || '-'})
+                  </span>
+                </h2>
+                <div className="flex flex-wrap items-center gap-2 text-xs t-muted mt-0.5">
+                  <span className="font-semibold t-text">{plg?.namaPt || '-'}</span>
+                  <span aria-hidden="true">&middot;</span>
+                  <span>Sopir: {selectedPerjalanan.sopirNama}</span>
+                  <span aria-hidden="true">&middot;</span>
+                  <span
+                    className="font-bold"
+                    style={{ color: statusTone(selectedPerjalanan.status) }}
+                  >
+                    {selectedPerjalanan.status}
+                  </span>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -765,16 +775,20 @@ export function PerjalananPage({
   return (
     <section className="space-y-5">
       <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <div className="text-xs font-medium t-muted">
-            Perjalanan &amp; Sewa <span aria-hidden="true">/</span>{' '}
-            <span className="t-link font-semibold">Perjalanan</span>
+        <div className="flex items-start gap-3">
+          <div className="w-11 h-11 rounded-xl t-subtle border t-border flex items-center justify-center shrink-0">
+            <ArmadaMenuIcon id="armada-perjalanan" size={30} />
           </div>
-          <h2 className="text-xl sm:text-2xl font-display t-text mt-1">Daftar Perjalanan</h2>
-          <p className="text-xs t-muted mt-1 max-w-2xl">
-            Jadwalkan penugasan menggunakan Master Unit, Pelanggan, Lokasi Muat–Bongkar, dan Tarif.
-            Klik baris perjalanan untuk membuka Detail Perjalanan dan mengajukan Uang Jalan.
-          </p>
+          <div>
+            <h2 className="text-base sm:text-lg font-display font-bold t-text leading-snug">
+              Daftar Perjalanan
+            </h2>
+            <p className="text-xs t-muted mt-0.5 max-w-2xl">
+              Jadwalkan penugasan menggunakan Master Unit, Pelanggan, Lokasi Muat–Bongkar, dan
+              Tarif. Klik baris perjalanan untuk membuka Detail Perjalanan dan mengajukan Uang
+              Jalan.
+            </p>
+          </div>
         </div>
 
         <button

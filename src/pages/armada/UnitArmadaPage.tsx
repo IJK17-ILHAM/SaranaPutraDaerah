@@ -17,6 +17,7 @@ import {
   XCircle,
 } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import { ArmadaMenuIcon } from '../../components/armada/ArmadaMenuIcons';
 import { UnitArmadaFormModal } from '../../components/armada/UnitArmadaFormModal';
 import { GOOGLE_ARMADA_DRIVE_FOLDER_URL } from '../../config/constants';
 import type {
@@ -182,40 +183,47 @@ export function UnitArmadaPage({
         {/* Breadcrumb & Back */}
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="space-y-1">
-            <div className="flex items-center gap-1.5 text-[11px] font-semibold t-muted">
-              <span>Master Data</span>
-              <span>/</span>
-              <button
-                type="button"
-                onClick={() => onSelectUnit(null)}
-                className="t-link hover:underline"
-              >
-                Unit Armada
-              </button>
-              <span>/</span>
-              <span className="t-text font-mono-num">{selectedUnit.kodeUnit}</span>
+            <div className="flex items-start gap-3">
+              <div className="w-11 h-11 rounded-xl t-subtle border t-border flex items-center justify-center shrink-0 mt-0.5">
+                <ArmadaMenuIcon id="armada-master-unit" size={30} />
+              </div>
+              <div className="space-y-0.5">
+                <div className="flex items-center gap-1.5 text-[11px] font-semibold t-muted">
+                  <span>Master Data</span>
+                  <span>/</span>
+                  <button
+                    type="button"
+                    onClick={() => onSelectUnit(null)}
+                    className="t-link hover:underline"
+                  >
+                    Unit Armada
+                  </button>
+                  <span>/</span>
+                  <span className="t-text font-mono-num">{selectedUnit.kodeUnit}</span>
+                </div>
+                <div className="flex flex-wrap items-center gap-2.5">
+                  <h2 className="text-lg sm:text-xl font-display font-bold t-text leading-snug">
+                    {selectedUnit.kodeUnit} &mdash; {selectedUnit.nomorPolisi}
+                  </h2>
+                  <span
+                    className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg text-[11px] font-bold ${
+                      isAktif ? 't-status-ok' : 't-status-bad'
+                    }`}
+                  >
+                    {isAktif ? (
+                      <CheckCircle2 className="w-3 h-3" />
+                    ) : (
+                      <XCircle className="w-3 h-3" />
+                    )}
+                    <span>{selectedUnit.status}</span>
+                  </span>
+                </div>
+                <p className="text-xs t-muted">
+                  {selectedUnit.jenisKendaraan} &middot; {merekModel}
+                  {selectedUnit.tahun ? ` (${selectedUnit.tahun})` : ''}
+                </p>
+              </div>
             </div>
-            <div className="flex flex-wrap items-center gap-2.5">
-              <h2 className="text-xl sm:text-2xl font-display t-text">
-                {selectedUnit.kodeUnit} &mdash; {selectedUnit.nomorPolisi}
-              </h2>
-              <span
-                className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg text-[11px] font-bold ${
-                  isAktif ? 't-status-ok' : 't-status-bad'
-                }`}
-              >
-                {isAktif ? (
-                  <CheckCircle2 className="w-3 h-3" />
-                ) : (
-                  <XCircle className="w-3 h-3" />
-                )}
-                <span>{selectedUnit.status}</span>
-              </span>
-            </div>
-            <p className="text-xs t-muted">
-              {selectedUnit.jenisKendaraan} &middot; {merekModel}
-              {selectedUnit.tahun ? ` (${selectedUnit.tahun})` : ''}
-            </p>
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
@@ -693,15 +701,19 @@ export function UnitArmadaPage({
     <section className="space-y-5">
       {/* Page Header */}
       <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <div className="text-[11px] font-bold uppercase tracking-wider t-link">
-            Master Data &rarr; Unit Armada
+        <div className="flex items-start gap-3">
+          <div className="w-11 h-11 rounded-xl t-subtle border t-border flex items-center justify-center shrink-0">
+            <ArmadaMenuIcon id="armada-master-unit" size={30} />
           </div>
-          <h2 className="text-xl sm:text-2xl font-display t-text mt-0.5">Unit Armada</h2>
-          <p className="text-xs t-muted mt-1 max-w-2xl">
-            Daftar master kendaraan yang digunakan untuk pencatatan STNK/KIR, pembuatan perjalanan,
-            pengisian P2H, dan pengajuan perbaikan.
-          </p>
+          <div>
+            <h2 className="text-base sm:text-lg font-display font-bold t-text leading-snug">
+              Daftar Master Unit Armada
+            </h2>
+            <p className="text-xs t-muted mt-0.5 max-w-2xl">
+              Daftar master kendaraan yang digunakan untuk pencatatan STNK/KIR, pembuatan perjalanan,
+              pengisian P2H, dan pengajuan perbaikan.
+            </p>
+          </div>
         </div>
 
         <button

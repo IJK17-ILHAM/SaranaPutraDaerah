@@ -12,6 +12,7 @@ import {
   X,
 } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import { ArmadaMenuIcon } from '../../components/armada/ArmadaMenuIcons';
 import { ARMADA_SOPIR_LIST, generateNextArmadaCode } from '../../data/armadaSeed';
 import type {
   ArmadaPelanggan,
@@ -305,17 +306,20 @@ export function SewaUnitPage({
   return (
     <section className="space-y-5">
       <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <div className="text-xs font-medium t-muted">
-            Perjalanan &amp; Sewa <span aria-hidden="true">/</span>{' '}
-            <span className="t-link font-semibold">Sewa Unit</span>
+        <div className="flex items-start gap-3">
+          <div className="w-11 h-11 rounded-xl t-subtle border t-border flex items-center justify-center shrink-0">
+            <ArmadaMenuIcon id="armada-sewa-unit" size={30} />
           </div>
-          <h2 className="text-xl sm:text-2xl font-display t-text mt-1">Sewa Unit Armada</h2>
-          <p className="text-xs t-muted mt-1 max-w-2xl">
-            Kelola tiga tahap penyewaan: <b>Buat Pemesanan (Dipesan)</b>,{' '}
-            <b>Serahkan Unit (Sedang Disewa)</b>, dan <b>Terima Kembali Unit (Dikembalikan)</b>{' '}
-            dengan pengecekan bentrok jadwal otomatis terhadap Perjalanan &amp; Sewa aktif.
-          </p>
+          <div>
+            <h2 className="text-base sm:text-lg font-display font-bold t-text leading-snug">
+              Sewa Unit Armada
+            </h2>
+            <p className="text-xs t-muted mt-0.5 max-w-2xl">
+              Kelola tiga tahap penyewaan: <b>Buat Pemesanan (Dipesan)</b>,{' '}
+              <b>Serahkan Unit (Sedang Disewa)</b>, dan <b>Terima Kembali Unit (Dikembalikan)</b>{' '}
+              dengan pengecekan bentrok jadwal otomatis terhadap Perjalanan &amp; Sewa aktif.
+            </p>
+          </div>
         </div>
 
         <button

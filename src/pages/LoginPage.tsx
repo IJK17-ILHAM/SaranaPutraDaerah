@@ -94,40 +94,10 @@ export function LoginPage() {
 
       setErrorMsg('Username/Email atau Password salah. Periksa akun Portal SPD atau SPS Armada.');
     } catch {
-      setErrorMsg('Gagal terhubung ke Google SPS. Periksa koneksi atau gunakan Mode Preview.');
+      setErrorMsg('Gagal terhubung ke Google SPS. Periksa koneksi internet Anda lalu coba lagi.');
     } finally {
       setSubmitting(false);
     }
-  };
-
-  const handleDemoLogin = () => {
-    completeSignIn(
-      {
-        id: 'DEMO-01',
-        nama: 'Admin Preview SPD',
-        username: 'superadmin',
-        role: 'Super Admin',
-        status: 'Aktif',
-        isDemo: true,
-      },
-      'Masuk dengan sesi Preview Admin. Data tetap disinkronkan dari SPS.',
-      'info',
-    );
-  };
-
-  const handleSopirDemoLogin = () => {
-    completeSignIn(
-      {
-        id: 'DEMO-SOPIR-01',
-        nama: 'Dedi Kurniawan',
-        username: 'dedi.sopir',
-        role: 'Sopir',
-        status: 'Aktif',
-        isDemo: true,
-      },
-      'Masuk sebagai Sopir (Dedi Kurniawan — ARM-001).',
-      'info',
-    );
   };
 
   return (
@@ -252,23 +222,6 @@ export function LoginPage() {
               <span>{submitting ? 'Memeriksa akun...' : 'Masuk'}</span>
             </button>
           </form>
-
-          <div className="mt-5 pt-4 border-t t-border space-y-2">
-            <button
-              type="button"
-              onClick={handleDemoLogin}
-              className="w-full py-2.5 rounded-xl t-btn-secondary text-xs font-semibold"
-            >
-              Masuk Mode Preview Admin (Super Admin)
-            </button>
-            <button
-              type="button"
-              onClick={handleSopirDemoLogin}
-              className="w-full py-2.5 rounded-xl t-btn-secondary text-xs font-semibold"
-            >
-              Masuk Mode Preview Sopir (Dedi Kurniawan · ARM-001)
-            </button>
-          </div>
         </div>
       </div>
     </section>

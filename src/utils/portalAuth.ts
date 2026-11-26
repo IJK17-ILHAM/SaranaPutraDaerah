@@ -17,8 +17,35 @@ export function readStoredUserSession(): UserSession | null {
   return null;
 }
 
+const ARMADA_LOCK_KEY = 'spd_armada_session_locked';
+
+export function markArmadaSessionLocked(): void {
+  try {
+    sessionStorage.setItem(ARMADA_LOCK_KEY, '1');
+  } catch {
+    // ignore
+  }
+}
+
+export function clearArmadaSessionLocked(): void {
+  try {
+    sessionStorage.removeItem(ARMADA_LOCK_KEY);
+  } catch {
+    // ignore
+  }
+}
+
+export function isArmadaSessionLocked(): boolean {
+  try {
+    return sessionStorage.getItem(ARMADA_LOCK_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
 export function clearStoredUserSession(): void {
   localStorage.removeItem(STORAGE_KEYS.USER);
+  clearArmadaSessionLocked();
 }
 
 export function isSuperAdminRole(role?: string | null): boolean {

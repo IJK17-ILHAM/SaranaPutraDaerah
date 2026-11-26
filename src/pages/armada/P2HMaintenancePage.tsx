@@ -17,6 +17,7 @@ import {
   X,
 } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import { ArmadaMenuIcon } from '../../components/armada/ArmadaMenuIcons';
 import { computePermintaanBarangStatus } from '../../data/armadaSeed';
 import type {
   ArmadaMaintenanceRequest,
@@ -282,16 +283,19 @@ export function HasilP2HPage({
 
   return (
     <section className="space-y-5">
-      <div>
-        <div className="text-xs font-medium t-muted">
-          P2H &amp; Maintenance <span aria-hidden="true">/</span>{' '}
-          <span className="t-link font-semibold">Hasil P2H</span>
+      <div className="flex items-start gap-3">
+        <div className="w-11 h-11 rounded-xl t-subtle border t-border flex items-center justify-center shrink-0">
+          <ArmadaMenuIcon id="armada-hasil-p2h" size={30} />
         </div>
-        <h2 className="text-xl sm:text-2xl font-display t-text mt-1">Hasil P2H Kendaraan</h2>
-        <p className="text-xs t-muted mt-1 max-w-2xl">
-          Tinjau checklist pemeriksaan harian yang dikirim sopir dari HP. Temuan kritis otomatis
-          menahan tombol <b>Mulai Perjalanan</b> sampai perbaikan &amp; pemeriksaan ulang selesai.
-        </p>
+        <div>
+          <h2 className="text-base sm:text-lg font-display font-bold t-text leading-snug">
+            Hasil P2H Kendaraan
+          </h2>
+          <p className="text-xs t-muted mt-0.5 max-w-2xl">
+            Tinjau checklist pemeriksaan harian yang dikirim sopir dari HP. Temuan kritis otomatis
+            menahan tombol <b>Mulai Perjalanan</b> sampai perbaikan &amp; pemeriksaan ulang selesai.
+          </p>
+        </div>
       </div>
 
       {/* Filter Bar */}
@@ -1324,17 +1328,20 @@ export function MaintenancePage({
   return (
     <section className="space-y-5">
       <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <div className="text-xs font-medium t-muted">
-            Maintenance Kendaraan <span aria-hidden="true">/</span>{' '}
-            <span className="t-link font-semibold">Pengajuan Perbaikan</span>
+        <div className="flex items-start gap-3">
+          <div className="w-11 h-11 rounded-xl t-subtle border t-border flex items-center justify-center shrink-0">
+            <ArmadaMenuIcon id="armada-maintenance" size={30} />
           </div>
-          <h2 className="text-xl sm:text-2xl font-display t-text mt-1">Pengajuan Perbaikan</h2>
-          <p className="text-xs t-muted mt-1 max-w-2xl">
-            Kelola perbaikan dari temuan P2H maupun laporan manual: <b>Diajukan</b> &rarr;{' '}
-            <b>Ditinjau</b> &rarr; <b>Dikerjakan / Menunggu Barang</b> &rarr; <b>Selesai</b> &amp;
-            pelepasan penahanan unit.
-          </p>
+          <div>
+            <h2 className="text-base sm:text-lg font-display font-bold t-text leading-snug">
+              Pengajuan Perbaikan
+            </h2>
+            <p className="text-xs t-muted mt-0.5 max-w-2xl">
+              Kelola perbaikan dari temuan P2H maupun laporan manual: <b>Diajukan</b> &rarr;{' '}
+              <b>Ditinjau</b> &rarr; <b>Dikerjakan / Menunggu Barang</b> &rarr; <b>Selesai</b> &amp;
+              pelepasan penahanan unit.
+            </p>
+          </div>
         </div>
 
         <button
@@ -1671,18 +1678,19 @@ export function PermintaanBarangPage({
 
   return (
     <section className="space-y-5">
-      <div>
-        <div className="text-xs font-medium t-muted">
-          Maintenance Kendaraan <span aria-hidden="true">/</span>{' '}
-          <span className="t-link font-semibold">Permintaan Barang</span>
+      <div className="flex items-start gap-3">
+        <div className="w-11 h-11 rounded-xl t-subtle border t-border flex items-center justify-center shrink-0">
+          <ArmadaMenuIcon id="armada-permintaan-barang" size={30} />
         </div>
-        <h2 className="text-xl sm:text-2xl font-display t-text mt-1">
-          Permintaan Barang Perbaikan
-        </h2>
-        <p className="text-xs t-muted mt-1 max-w-2xl">
-          Pantau jumlah diminta, disetujui, dan diterima untuk tiap barang. Jika baru sebagian
-          barang datang, status otomatis tampil <b>Terpenuhi Sebagian</b> beserta kekurangannya.
-        </p>
+        <div>
+          <h2 className="text-base sm:text-lg font-display font-bold t-text leading-snug">
+            Permintaan Barang Perbaikan
+          </h2>
+          <p className="text-xs t-muted mt-0.5 max-w-2xl">
+            Pantau jumlah diminta, disetujui, dan diterima untuk tiap barang. Jika baru sebagian
+            barang datang, status otomatis tampil <b>Terpenuhi Sebagian</b> beserta kekurangannya.
+          </p>
+        </div>
       </div>
 
       {/* Filter Bar */}
