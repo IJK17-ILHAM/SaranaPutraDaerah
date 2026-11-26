@@ -343,19 +343,21 @@ export function TugasSayaSopirPage({
       </div>
 
       {/* 3 Mobile Tabs: Tugas Saya | Lapor Kendala | Riwayat */}
-      <div className="grid grid-cols-3 gap-1.5 p-1.5 rounded-2xl t-card">
+      <div className="grid grid-cols-3 gap-1 sm:gap-1.5 p-1 sm:p-1.5 rounded-2xl t-card">
         <button
           type="button"
           onClick={() => {
             setActiveTab('tugas');
             setP2hMode(false);
           }}
-          className={`flex items-center justify-center gap-1.5 py-2.5 px-2 rounded-xl text-xs font-bold transition-colors whitespace-nowrap ${
+          className={`min-w-0 min-h-[52px] sm:min-h-0 flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-1.5 py-2 sm:py-2.5 px-1.5 sm:px-3 rounded-xl text-[11px] sm:text-xs font-bold leading-tight text-center transition-colors ${
             activeTab === 'tugas' ? 't-btn-primary' : 't-muted hover:t-text'
           }`}
         >
           <ClipboardCheck className="w-4 h-4 shrink-0" />
-          <span>Tugas Saya ({myActiveTasks.length})</span>
+          <span className="truncate max-w-full">
+            Tugas Saya <span className="font-mono-num">({myActiveTasks.length})</span>
+          </span>
         </button>
         <button
           type="button"
@@ -366,12 +368,12 @@ export function TugasSayaSopirPage({
               setKendalaTaskId(myActiveTasks[0].id);
             }
           }}
-          className={`flex items-center justify-center gap-1.5 py-2.5 px-2 rounded-xl text-xs font-bold transition-colors whitespace-nowrap ${
+          className={`min-w-0 min-h-[52px] sm:min-h-0 flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-1.5 py-2 sm:py-2.5 px-1.5 sm:px-3 rounded-xl text-[11px] sm:text-xs font-bold leading-tight text-center transition-colors ${
             activeTab === 'kendala' ? 't-btn-primary' : 't-muted hover:t-text'
           }`}
         >
           <AlertTriangle className="w-4 h-4 shrink-0" />
-          <span>Lapor Kendala</span>
+          <span className="truncate max-w-full">Lapor Kendala</span>
         </button>
         <button
           type="button"
@@ -379,12 +381,12 @@ export function TugasSayaSopirPage({
             setActiveTab('riwayat');
             setP2hMode(false);
           }}
-          className={`flex items-center justify-center gap-1.5 py-2.5 px-2 rounded-xl text-xs font-bold transition-colors whitespace-nowrap ${
+          className={`min-w-0 min-h-[52px] sm:min-h-0 flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-1.5 py-2 sm:py-2.5 px-1.5 sm:px-3 rounded-xl text-[11px] sm:text-xs font-bold leading-tight text-center transition-colors ${
             activeTab === 'riwayat' ? 't-btn-primary' : 't-muted hover:t-text'
           }`}
         >
           <History className="w-4 h-4 shrink-0" />
-          <span>Riwayat</span>
+          <span className="truncate max-w-full">Riwayat</span>
         </button>
       </div>
 
