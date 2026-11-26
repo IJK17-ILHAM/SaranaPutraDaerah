@@ -488,19 +488,19 @@ export async function fetchArmadaAllFromSPS(): Promise<ParsedArmadaSpsData> {
     return result;
   }
 
-  if (Array.isArray(json.units) && json.units.length > 0) {
+  if (Array.isArray(json.units)) {
     result.units = normalizeUnits(json.units);
     result.updated = true;
   }
-  if (Array.isArray(json.pelanggan) && json.pelanggan.length > 0) {
+  if (Array.isArray(json.pelanggan)) {
     result.pelanggan = normalizePelanggan(json.pelanggan);
     result.updated = true;
   }
-  if (Array.isArray(json.lokasi) && json.lokasi.length > 0) {
+  if (Array.isArray(json.lokasi)) {
     result.lokasi = normalizeLokasi(json.lokasi);
     result.updated = true;
   }
-  if (Array.isArray(json.tarif) && json.tarif.length > 0) {
+  if (Array.isArray(json.tarif)) {
     result.tarif = normalizeTarif(json.tarif);
     result.updated = true;
   }
