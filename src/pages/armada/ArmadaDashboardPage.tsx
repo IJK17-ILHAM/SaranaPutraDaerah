@@ -3,6 +3,7 @@ import {
   Banknote,
   Building2,
   CheckCircle2,
+  ChevronDown,
   ClipboardCheck,
   Clock,
   CloudUpload,
@@ -180,6 +181,7 @@ export function ArmadaDashboardPage() {
   const [session, setSession] = useState<UserSession | null>(() => readStoredUserSession());
   const [activeMenu, setActiveMenu] = useState<ArmadaMenuId>('armada-dashboard');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
 
   // Core persisted Armada state
   const [units, setUnits] = useState<ArmadaUnit[]>(() => loadStoredArmadaUnits());
@@ -1837,7 +1839,15 @@ export function ArmadaDashboardPage() {
 
   const openMenu = (menu: ArmadaMenuId) => {
     setActiveMenu(menu);
+    const parentGroup = MENU_GROUP_MAP[menu];
+    if (parentGroup) {
+      setExpandedGroups((prev) => (prev[parentGroup] ? prev : { ...prev, [parentGroup]: true }));
+    }
     setMobileMenuOpen(false);
+  };
+
+  const toggleNavGroup = (groupTitle: string) => {
+    setExpandedGroups((prev) => ({ ...prev, [groupTitle]: !prev[groupTitle] }));
   };
 
   // ==========================================
@@ -2002,6 +2012,7 @@ export function ArmadaDashboardPage() {
   const navGroups: Array<{
     title: string;
     icon: typeof Database;
+    collapsible?: boolean;
     items: Array<{
       id: ArmadaMenuId;
       label: string;
@@ -2020,6 +2031,7 @@ export function ArmadaDashboardPage() {
     {
       title: 'Perjalanan & Sewa',
       icon: Route,
+      collapsible: true,
       items: [
         { id: 'armada-perjalanan', label: 'Perjalanan', icon: Route, count: perjalanan.length },
         { id: 'armada-uang-jalan', label: 'Uang Jalan', icon: Wallet, count: uangJalan.length },
@@ -2029,6 +2041,7 @@ export function ArmadaDashboardPage() {
     {
       title: 'P2H & Maintenance',
       icon: Wrench,
+      collapsible: true,
       items: [
         { id: 'armada-hasil-p2h', label: 'Hasil P2H', icon: ClipboardCheck, count: p2hList.length },
         {
@@ -2048,6 +2061,7 @@ export function ArmadaDashboardPage() {
     {
       title: 'Master Data',
       icon: Database,
+      collapsible: true,
       items: [
         { id: 'armada-master-unit', label: 'Unit Armada', icon: Truck, count: units.length },
         {
@@ -2080,50 +2094,87 @@ export function ArmadaDashboardPage() {
   ];
 
   const renderSidebarNav = () => (
-    <nav className="space-y-4" aria-label="Navigasi Armada">
+    <nav className="space-y-2.5" aria-label="Navigasi Armada">
       {navGroups.map((group) => {
         const GroupIcon = group.icon;
+        const hasActiveChild = group.items.some((item) => item.id === activeMenu);
+        const isOpen = group.collapsible ? Boolean(expandedGroups[group.title]) : true;
+
         return (
           <div key={group.title} className="space-y-1">
-            <div
-              className="px-2.5 flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider"
-              style={{ color: 'var(--text-sidebar-muted)' }}
-            >
-              <GroupIcon className="w-3.5 h-3.5 shrink-0" />
-              <span>{group.title}</span>
-            </div>
-            {group.items.map((item) => {
-              const active = activeMenu === item.id;
-              return (
-                <button
-                  key={item.id}
-                  type="button"
-                  onClick={() => openMenu(item.id)}
-                  className={`w-full flex items-center justify-between gap-2 px-3 py-2 rounded-xl text-[13px] leading-snug font-semibold transition-colors ${
-                    active ? 'font-bold shadow-xs' : 't-sidebar-btn'
+            {group.collapsible ? (
+              <button
+                type="button"
+                onClick={() => toggleNavGroup(group.title)}
+                aria-expanded={isOpen}
+                className={`w-full flex items-center justify-between gap-2 px-3 py-2.5 rounded-xl text-[12px] font-bold tracking-wide transition-colors cursor-pointer ${
+                  isOpen || hasActiveChild
+                    ? 'bg-white/12 text-white'
+                    : 'bg-white/5 hover:bg-white/10 text-white/85'
+                }`}
+              >
+                <span className="inline-flex items-center gap-2 min-w-0">
+                  <GroupIcon className="w-4 h-4 shrink-0" />
+                  <span className="truncate uppercase">{group.title}</span>
+                </span>
+                <ChevronDown
+                  className={`w-4 h-4 shrink-0 transition-transform duration-200 ${
+                    isOpen ? 'rotate-180' : ''
                   }`}
-                  style={
-                    active
-                      ? { backgroundColor: 'var(--btn-gold)', color: 'var(--btn-gold-text)' }
-                      : undefined
-                  }
-                >
-                  <span className="inline-flex items-center gap-2.5 min-w-0">
-                    <ArmadaMenuIcon id={item.id} size={22} onDark={!active} />
-                    <span className="truncate">{item.label}</span>
-                  </span>
-                  {typeof item.count === 'number' && (
-                    <span
-                      className={`px-1.5 py-0.5 rounded-md text-[11px] font-mono-num font-bold shrink-0 ${
-                        active ? 'bg-black/15' : 'bg-white/10 text-white/85'
+                />
+              </button>
+            ) : (
+              <div
+                className="px-2.5 pt-1 flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider"
+                style={{ color: 'var(--text-sidebar-muted)' }}
+              >
+                <GroupIcon className="w-3.5 h-3.5 shrink-0" />
+                <span>{group.title}</span>
+              </div>
+            )}
+
+            {isOpen && (
+              <div
+                className={
+                  group.collapsible
+                    ? 'pl-2.5 ml-2.5 border-l border-white/15 space-y-1 pt-0.5'
+                    : 'space-y-1'
+                }
+              >
+                {group.items.map((item) => {
+                  const active = activeMenu === item.id;
+                  return (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => openMenu(item.id)}
+                      className={`w-full flex items-center justify-between gap-2 px-3 py-2 rounded-xl text-[13px] leading-snug font-semibold transition-colors ${
+                        active ? 'font-bold shadow-xs' : 't-sidebar-btn'
                       }`}
+                      style={
+                        active
+                          ? { backgroundColor: 'var(--btn-gold)', color: 'var(--btn-gold-text)' }
+                          : undefined
+                      }
                     >
-                      {item.count}
-                    </span>
-                  )}
-                </button>
-              );
-            })}
+                      <span className="inline-flex items-center gap-2.5 min-w-0">
+                        <ArmadaMenuIcon id={item.id} size={22} onDark={!active} />
+                        <span className="truncate">{item.label}</span>
+                      </span>
+                      {typeof item.count === 'number' && (
+                        <span
+                          className={`px-1.5 py-0.5 rounded-md text-[11px] font-mono-num font-bold shrink-0 ${
+                            active ? 'bg-black/15' : 'bg-white/10 text-white/85'
+                          }`}
+                        >
+                          {item.count}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
         );
       })}
