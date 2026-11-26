@@ -33,6 +33,15 @@ export async function loginWithSPS(
   );
 }
 
+function isValidPayrollRow(row: unknown): row is PayrollRecord {
+  if (!row || typeof row !== 'object') return false;
+  const r = row as Record<string, unknown>;
+  const hasNama = String(r.nama || '').trim() !== '';
+  const hasPeriode = String(r.periodeTanggal || r.periodeBulan || '').trim() !== '';
+  if (!hasNama && !hasPeriode) return false;
+  return true;
+}
+
 export async function fetchPayrollFromSPS(): Promise<PayrollRecord[]> {
   const json = await jsonpRequest<PayrollRecord[] | GenericSpsResponse>(
     { t: Date.now() },
@@ -40,10 +49,12 @@ export async function fetchPayrollFromSPS(): Promise<PayrollRecord[]> {
     GOOGLE_SPS_URL,
   );
 
-  if (Array.isArray(json)) return [...json].reverse();
-  if (json && Array.isArray(json.data)) return [...json.data].reverse();
-  if (json && Array.isArray(json.records)) return [...json.records].reverse();
-  return [];
+  let rows: PayrollRecord[] = [];
+  if (Array.isArray(json)) rows = json;
+  else if (json && Array.isArray(json.data)) rows = json.data;
+  else if (json && Array.isArray(json.records)) rows = json.records;
+
+  return rows.filter(isValidPayrollRow).reverse();
 }
 
 export async function savePayrollToSPS(payload: PayrollRecord): Promise<GenericSpsResponse> {

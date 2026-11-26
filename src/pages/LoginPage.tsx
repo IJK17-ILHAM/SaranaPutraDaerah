@@ -1,6 +1,7 @@
 import { CheckCircle2, Eye, EyeOff, KeyRound, LogIn, Truck } from 'lucide-react';
 import { useState } from 'react';
 import { useApp } from '../context/AppContext';
+import { loginArmadaWithSPS } from '../services/armadaApi';
 import { loginWithSPS } from '../services/payrollApi';
 import { SPD_NAVY_GRADIENT, SpdLogoWordmark } from '../components/common/SpdLogo';
 import type { UserSession } from '../types/auth';
@@ -8,7 +9,7 @@ import {
   canAccessArmadaSession,
   getArmadaUrlFromPortal,
   getRequestedRedirectTarget,
-  isActiveSopirSession,
+  isArmadaOnlySession,
 } from '../utils/portalAuth';
 
 export function LoginPage() {
@@ -32,12 +33,12 @@ export function LoginPage() {
       const cleanUrl = `${window.location.pathname}${window.location.hash}`;
       window.history.replaceState({}, '', cleanUrl);
       showToast(
-        'Akses /armada/ khusus untuk role Super Admin atau Sopir. Anda diarahkan ke Portal Utama.',
+        'Akun ini tidak memiliki akses ke modul Armada. Anda diarahkan ke Portal Utama.',
         'warning',
       );
       return;
     }
-    if (isActiveSopirSession(loggedUser)) {
+    if (isArmadaOnlySession(loggedUser)) {
       window.location.replace(getArmadaUrlFromPortal());
       return;
     }
@@ -48,17 +49,50 @@ export function LoginPage() {
     e.preventDefault();
     setErrorMsg('');
     setSubmitting(true);
+    const cleanUser = email.trim();
     try {
-      const json = await loginWithSPS(email.trim(), password);
-      if (json && json.status === 'ok' && json.user) {
-        completeSignIn(
-          json.user,
-          `Selamat datang, ${json.user.nama || json.user.username || 'Admin'}.`,
-          'success',
-        );
-      } else {
-        setErrorMsg((json && json.message) || 'Username/Email atau Password salah.');
+      // When coming from /armada/, check SPS Armada accounts first (Sopir, Admin Armada, Mekanik, etc.)
+      if (isArmadaRedirect) {
+        const armadaRes = await loginArmadaWithSPS(cleanUser, password);
+        if (armadaRes.status === 'ok' && armadaRes.user) {
+          completeSignIn(
+            armadaRes.user,
+            `Selamat datang di Armada, ${armadaRes.user.nama || armadaRes.user.username}.`,
+            'success',
+          );
+          return;
+        }
       }
+
+      // Check main Portal SPD SPS account (Super Admin, HR & Payroll, etc.)
+      try {
+        const json = await loginWithSPS(cleanUser, password);
+        if (json && json.status === 'ok' && json.user) {
+          completeSignIn(
+            json.user,
+            `Selamat datang, ${json.user.nama || json.user.username || 'Admin'}.`,
+            'success',
+          );
+          return;
+        }
+      } catch {
+        // Continue to Armada SPS check below
+      }
+
+      // If not found in Portal Gajian, also check SPS Armada so Sopir/Admin Armada can log in from root URL
+      if (!isArmadaRedirect) {
+        const armadaRes = await loginArmadaWithSPS(cleanUser, password);
+        if (armadaRes.status === 'ok' && armadaRes.user) {
+          completeSignIn(
+            armadaRes.user,
+            `Selamat datang di Armada, ${armadaRes.user.nama || armadaRes.user.username}.`,
+            'success',
+          );
+          return;
+        }
+      }
+
+      setErrorMsg('Username/Email atau Password salah. Periksa akun Portal SPD atau SPS Armada.');
     } catch {
       setErrorMsg('Gagal terhubung ke Google SPS. Periksa koneksi atau gunakan Mode Preview.');
     } finally {

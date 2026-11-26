@@ -8,6 +8,7 @@ import type {
   ArmadaUnit,
 } from '../types/armada';
 import type { KtKasOps } from '../types/kasTonase';
+import { syncTonaseAction } from '../services/tonaseApi';
 import { formatDateFullID } from './format';
 
 export interface ScheduleConflict {
@@ -238,6 +239,10 @@ export function recordArmadaKasTonaseTransaction(params: {
   } catch {
     localStorage.setItem(STORAGE_KEYS.KT_KASOPS, JSON.stringify([entry]));
   }
+
+  void syncTonaseAction('saveKasOps', entry as unknown as Record<string, unknown>).catch(
+    () => undefined,
+  );
 
   return entry;
 }

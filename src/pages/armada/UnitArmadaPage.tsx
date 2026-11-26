@@ -2,19 +2,23 @@ import {
   ArrowLeft,
   CheckCircle2,
   ClipboardCheck,
+  ExternalLink,
   Eye,
   FileText,
+  FolderOpen,
   Pencil,
   Plus,
   Power,
   Route,
   Search,
   Truck,
+  Upload,
   Wrench,
   XCircle,
 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { UnitArmadaFormModal } from '../../components/armada/UnitArmadaFormModal';
+import { GOOGLE_ARMADA_DRIVE_FOLDER_URL } from '../../config/constants';
 import type {
   ArmadaLokasi,
   ArmadaMaintenanceRequest,
@@ -23,9 +27,11 @@ import type {
   ArmadaPerjalanan,
   ArmadaPermintaanBarang,
   ArmadaUnit,
+  ArmadaUnitBerkas,
   ArmadaUnitInput,
   ArmadaUnitStatus,
 } from '../../types/armada';
+import { readProofFileAsDataUrl } from '../../utils/armadaSchedule';
 import { formatDateShortID } from '../../utils/format';
 
 type DetailTabId = 'berkas' | 'perjalanan' | 'p2h' | 'perbaikan';
@@ -45,6 +51,16 @@ interface UnitArmadaPageProps {
   onOpenPerjalanan?: (perjalananId: string) => void;
   onOpenP2H?: (p2hId: string) => void;
   onOpenMaintenance?: (maintenanceId: string) => void;
+  onUploadUnitBerkas?: (
+    unit: ArmadaUnit,
+    payload: {
+      jenis: ArmadaUnitBerkas['jenis'];
+      berlakuSampai?: string;
+      catatan?: string;
+      fileName: string;
+      dataUrl: string;
+    },
+  ) => Promise<void> | void;
 }
 
 export function UnitArmadaPage({
@@ -62,6 +78,7 @@ export function UnitArmadaPage({
   onOpenPerjalanan,
   onOpenP2H,
   onOpenMaintenance,
+  onUploadUnitBerkas,
 }: UnitArmadaPageProps) {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<'ALL' | ArmadaUnitStatus>('ALL');
@@ -69,6 +86,10 @@ export function UnitArmadaPage({
   const [modalOpen, setModalOpen] = useState(false);
   const [editingUnit, setEditingUnit] = useState<ArmadaUnit | null>(null);
   const [detailTab, setDetailTab] = useState<DetailTabId>('perjalanan');
+  const [berkasJenis, setBerkasJenis] = useState<ArmadaUnitBerkas['jenis']>('STNK');
+  const [berkasBerlaku, setBerkasBerlaku] = useState('');
+  const [berkasCatatan, setBerkasCatatan] = useState('');
+  const [uploadingBerkas, setUploadingBerkas] = useState(false);
 
   const selectedUnit = useMemo(
     () => (selectedUnitId ? units.find((u) => u.id === selectedUnitId) || null : null),
@@ -343,12 +364,144 @@ export function UnitArmadaPage({
           </div>
 
           {detailTab === 'berkas' && (
-            <div className="p-6 text-center space-y-2 text-xs">
-              <div className="font-bold t-text">Berkas Kendaraan — {selectedUnit.kodeUnit}</div>
-              <p className="t-muted max-w-lg mx-auto">
-                Pencatatan masa berlaku STNK tahunan/5 tahunan, uji KIR berkala, dan izin angkut
-                unit ini terhubung dengan identitas unit {selectedUnit.nomorPolisi}.
-              </p>
+            <div className="p-5 space-y-4 text-xs">
+              <div className="p-4 rounded-xl t-subtle border t-border flex flex-wrap items-center justify-between gap-3">
+                <div className="space-y-1">
+                  <div className="font-bold t-text inline-flex items-center gap-1.5">
+                    <FolderOpen className="w-4 h-4 t-link" />
+                    <span>
+                      Folder Google Drive Kendaraan: {selectedUnit.nomorPolisi}
+                    </span>
+                  </div>
+                  <p className="t-muted text-[11px]">
+                    Semua foto P2H, pengajuan perbaikan, bukti sewa, uang jalan, dan berkas STNK/KIR
+                    unit ini otomatis disimpan ke folder{' '}
+                    <b>Drive Armada / {selectedUnit.nomorPolisi}</b>.
+                  </p>
+                </div>
+                <a
+                  href={selectedUnit.driveFolderUrl || GOOGLE_ARMADA_DRIVE_FOLDER_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl t-btn-primary text-xs whitespace-nowrap"
+                >
+                  <ExternalLink className="w-3.5 h-3.5" />
+                  <span>Buka Folder Drive</span>
+                </a>
+              </div>
+
+              {onUploadUnitBerkas && (
+                <div className="p-4 rounded-xl border t-border space-y-3">
+                  <div className="font-bold t-text">
+                    Unggah Dokumen / Foto ke Drive ({selectedUnit.nomorPolisi} / Berkas Kendaraan)
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+                    <div>
+                      <label className="block t-field-label mb-1">Jenis Dokumen</label>
+                      <select
+                        value={berkasJenis}
+                        onChange={(e) =>
+                          setBerkasJenis(e.target.value as ArmadaUnitBerkas['jenis'])
+                        }
+                        className="w-full text-xs px-3 py-2 rounded-xl t-input font-semibold"
+                      >
+                        <option value="STNK">STNK</option>
+                        <option value="KIR">KIR</option>
+                        <option value="BPKB / Izin">BPKB / Izin Angkut</option>
+                        <option value="Foto Unit">Foto Unit</option>
+                        <option value="Lainnya">Lainnya</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block t-field-label mb-1">Berlaku Sampai (Opsional)</label>
+                      <input
+                        type="date"
+                        value={berkasBerlaku}
+                        onChange={(e) => setBerkasBerlaku(e.target.value)}
+                        className="w-full text-xs px-3 py-2 rounded-xl t-input"
+                      />
+                    </div>
+                    <div>
+                      <label className="block t-field-label mb-1">Catatan</label>
+                      <input
+                        type="text"
+                        value={berkasCatatan}
+                        onChange={(e) => setBerkasCatatan(e.target.value)}
+                        placeholder="No. uji KIR / keterangan"
+                        className="w-full text-xs px-3 py-2 rounded-xl t-input"
+                      />
+                    </div>
+                    <div className="flex items-end">
+                      <label className="w-full inline-flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl t-btn-secondary text-xs font-semibold cursor-pointer">
+                        <Upload className="w-3.5 h-3.5" />
+                        <span>{uploadingBerkas ? 'Mengunggah...' : 'Pilih & Unggah File'}</span>
+                        <input
+                          type="file"
+                          accept="image/*,.pdf"
+                          disabled={uploadingBerkas}
+                          className="hidden"
+                          onChange={async (e) => {
+                            const file = e.target.files?.[0];
+                            e.target.value = '';
+                            if (!file) return;
+                            setUploadingBerkas(true);
+                            try {
+                              const { dataUrl, name } = await readProofFileAsDataUrl(file);
+                              await onUploadUnitBerkas(selectedUnit, {
+                                jenis: berkasJenis,
+                                berlakuSampai: berkasBerlaku || undefined,
+                                catatan: berkasCatatan.trim() || undefined,
+                                fileName: name,
+                                dataUrl,
+                              });
+                              setBerkasBerlaku('');
+                              setBerkasCatatan('');
+                            } finally {
+                              setUploadingBerkas(false);
+                            }
+                          }}
+                        />
+                      </label>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {(selectedUnit.berkasList || []).length > 0 ? (
+                <div className="overflow-x-auto border t-border rounded-xl">
+                  <table className="w-full text-left text-xs">
+                    <thead>
+                      <tr className="t-subtle border-b t-border">
+                        <th className="py-2.5 px-4 t-th-label">Jenis</th>
+                        <th className="py-2.5 px-4 t-th-label">Nama File</th>
+                        <th className="py-2.5 px-4 t-th-label">Berlaku Sampai</th>
+                        <th className="py-2.5 px-4 t-th-label">Diunggah</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y t-border">
+                      {(selectedUnit.berkasList || []).map((b) => (
+                        <tr key={b.id} className="t-row-hover">
+                          <td className="py-2.5 px-4 font-bold t-text">{b.jenis}</td>
+                          <td className="py-2.5 px-4">
+                            <div className="font-semibold t-text">{b.namaFile}</div>
+                            {b.catatan && <div className="text-[11px] t-muted">{b.catatan}</div>}
+                          </td>
+                          <td className="py-2.5 px-4 font-mono-num t-muted">
+                            {b.berlakuSampai ? formatDateShortID(b.berlakuSampai) : '-'}
+                          </td>
+                          <td className="py-2.5 px-4 text-[11px] t-muted">
+                            {formatDateShortID(b.uploadedAt)} · {b.uploadedBy}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div className="p-4 text-center t-muted">
+                  Belum ada dokumen STNK/KIR/Foto Unit yang diunggah dari halaman ini.
+                </div>
+              )}
             </div>
           )}
 

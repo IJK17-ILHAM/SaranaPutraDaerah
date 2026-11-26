@@ -14,7 +14,19 @@ export type ArmadaMenuId =
   | 'armada-master-unit'
   | 'armada-master-pelanggan'
   | 'armada-master-lokasi'
-  | 'armada-master-tarif';
+  | 'armada-master-tarif'
+  | 'armada-akun';
+
+export interface ArmadaUnitBerkas {
+  id: string;
+  jenis: 'STNK' | 'KIR' | 'BPKB / Izin' | 'Foto Unit' | 'Lainnya';
+  namaFile: string;
+  berlakuSampai?: string;
+  catatan?: string;
+  driveUrl?: string;
+  uploadedAt: string;
+  uploadedBy: string;
+}
 
 export interface ArmadaUnit {
   id: string;
@@ -35,6 +47,8 @@ export interface ArmadaUnit {
   muatanTon?: number;
   updateTerakhir?: string;
   catatan?: string;
+  driveFolderUrl?: string;
+  berkasList?: ArmadaUnitBerkas[];
   createdAt: string;
   updatedAt: string;
 }
@@ -455,3 +469,38 @@ export interface ArmadaKendalaReport {
   waktuLapor: string; // ISO
   updatedAt: string;
 }
+
+export type ArmadaAccountRole =
+  | 'Super Admin'
+  | 'Admin Armada'
+  | 'Kepala Armada'
+  | 'Finance'
+  | 'Mekanik'
+  | 'Sopir';
+
+export interface ArmadaAccount {
+  id: string;
+  idAkun: string;
+  namaLengkap: string;
+  username: string;
+  passwordPin: string;
+  roleAkses: ArmadaAccountRole;
+  status: ArmadaUnitStatus;
+  unitUtamaKode?: string;
+  catatan?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ArmadaAccountInput {
+  id?: string;
+  idAkun?: string;
+  namaLengkap: string;
+  username: string;
+  passwordPin?: string;
+  roleAkses: ArmadaAccountRole;
+  status: ArmadaUnitStatus;
+  unitUtamaKode?: string;
+  catatan?: string;
+}
+

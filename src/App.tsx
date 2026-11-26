@@ -10,7 +10,7 @@ import {
   canAccessArmadaSession,
   getArmadaUrlFromPortal,
   getRequestedRedirectTarget,
-  isActiveSopirSession,
+  isArmadaOnlySession,
 } from './utils/portalAuth';
 import { KasTonaseProvider } from './context/KasTonaseContext';
 import { PayrollProvider } from './context/PayrollContext';
@@ -78,11 +78,11 @@ function PortalShell() {
       } else {
         const cleanUrl = `${window.location.pathname}${window.location.hash}`;
         window.history.replaceState({}, '', cleanUrl);
-        showToast('Akses Armada khusus untuk role Super Admin atau Sopir.', 'warning');
+        showToast('Akun ini tidak memiliki akses ke modul Armada.', 'warning');
       }
       return;
     }
-    if (isActiveSopirSession(user)) {
+    if (isArmadaOnlySession(user)) {
       window.location.replace(getArmadaUrlFromPortal());
     }
   }, [showToast, user]);

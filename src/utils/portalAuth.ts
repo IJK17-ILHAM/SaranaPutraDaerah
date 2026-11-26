@@ -43,8 +43,25 @@ export function isActiveSopirSession(user: UserSession | null): boolean {
   return isSopirRole(user.role);
 }
 
+export function isArmadaStaffRole(role?: string | null): boolean {
+  const normalized = (role || '').toString().trim().toLowerCase().replace(/\s+/g, ' ');
+  return (
+    normalized === 'admin armada' ||
+    normalized === 'kepala armada' ||
+    normalized === 'mekanik' ||
+    normalized === 'finance' ||
+    normalized === 'finance armada'
+  );
+}
+
+export function isArmadaOnlySession(user: UserSession | null): boolean {
+  if (!user) return false;
+  if ((user.status || '').toString().trim().toLowerCase() === 'nonaktif') return false;
+  return isSopirRole(user.role) || isArmadaStaffRole(user.role);
+}
+
 export function canAccessArmadaSession(user: UserSession | null): boolean {
-  return isActiveSuperAdminSession(user) || isActiveSopirSession(user);
+  return isActiveSuperAdminSession(user) || isActiveSopirSession(user) || isArmadaOnlySession(user);
 }
 
 /**

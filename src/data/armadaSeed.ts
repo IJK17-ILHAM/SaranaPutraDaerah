@@ -911,3 +911,91 @@ export function saveStoredArmadaKendala(
 ): void {
   localStorage.setItem(STORAGE_KEYS.ARMADA_KENDALA, JSON.stringify(items));
 }
+
+export const INITIAL_ARMADA_ACCOUNTS: import('../types/armada').ArmadaAccount[] = [
+  {
+    id: 'ARM-USR-001',
+    idAkun: 'ARM-USR-001',
+    namaLengkap: 'Dedi Kurniawan',
+    username: 'dedi.sopir',
+    passwordPin: 'SPD123',
+    roleAkses: 'Sopir',
+    status: 'Aktif',
+    unitUtamaKode: 'ARM-001',
+    catatan: 'Sopir utama unit ARM-001 (Wingbox)',
+    createdAt: SEED_TIMESTAMP,
+    updatedAt: SEED_TIMESTAMP,
+  },
+  {
+    id: 'ARM-USR-002',
+    idAkun: 'ARM-USR-002',
+    namaLengkap: 'Rudi Hartono',
+    username: 'rudi.sopir',
+    passwordPin: 'SPD123',
+    roleAkses: 'Sopir',
+    status: 'Aktif',
+    unitUtamaKode: 'SPD-TRK-01',
+    catatan: 'Sopir unit SPD-TRK-01 (Truk B3)',
+    createdAt: SEED_TIMESTAMP,
+    updatedAt: SEED_TIMESTAMP,
+  },
+  {
+    id: 'ARM-USR-003',
+    idAkun: 'ARM-USR-003',
+    namaLengkap: 'Admin Armada SPD',
+    username: 'admin.armada',
+    passwordPin: 'ARMADA2026',
+    roleAkses: 'Admin Armada',
+    status: 'Aktif',
+    catatan: 'Pengelola jadwal perjalanan, sewa, dan P2H',
+    createdAt: SEED_TIMESTAMP,
+    updatedAt: SEED_TIMESTAMP,
+  },
+  {
+    id: 'ARM-USR-004',
+    idAkun: 'ARM-USR-004',
+    namaLengkap: 'Kepala Armada SPD',
+    username: 'kepala.armada',
+    passwordPin: 'ARMADA2026',
+    roleAkses: 'Kepala Armada',
+    status: 'Aktif',
+    catatan: 'Persetujuan perbaikan & pelepasan penahanan unit',
+    createdAt: SEED_TIMESTAMP,
+    updatedAt: SEED_TIMESTAMP,
+  },
+  {
+    id: 'ARM-USR-005',
+    idAkun: 'ARM-USR-005',
+    namaLengkap: 'Mekanik Workshop SPD',
+    username: 'mekanik.spd',
+    passwordPin: 'ARMADA2026',
+    roleAkses: 'Mekanik',
+    status: 'Aktif',
+    catatan: 'Eksekusi perbaikan & permintaan suku cadang',
+    createdAt: SEED_TIMESTAMP,
+    updatedAt: SEED_TIMESTAMP,
+  },
+];
+
+export function loadStoredArmadaAccounts(): import('../types/armada').ArmadaAccount[] {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.ARMADA_ACCOUNTS);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed as import('../types/armada').ArmadaAccount[];
+      }
+    }
+  } catch {
+    // fallback
+  }
+  localStorage.setItem(STORAGE_KEYS.ARMADA_ACCOUNTS, JSON.stringify(INITIAL_ARMADA_ACCOUNTS));
+  return INITIAL_ARMADA_ACCOUNTS;
+}
+
+export function saveStoredArmadaAccounts(
+  items: import('../types/armada').ArmadaAccount[],
+): void {
+  localStorage.setItem(STORAGE_KEYS.ARMADA_ACCOUNTS, JSON.stringify(items));
+}
+

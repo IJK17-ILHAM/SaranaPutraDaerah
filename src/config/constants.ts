@@ -4,6 +4,14 @@ export const GOOGLE_SPS_URL =
 export const GOOGLE_TONASE_URL =
   'https://script.google.com/macros/s/AKfycbwUCWfARnTuzGZKMJ78fTEvIO-gJ0SoIoEXDU5ovzygbMqCHPIKFZPLLk723gXmXkvWVw/exec';
 
+export const GOOGLE_ARMADA_URL =
+  'https://script.google.com/macros/s/AKfycbwqrh6enSeyZCel9Ofu4r7kEuIIbjBaUgAD61n5JlbdQKC_T1UHRr8caWyjUh_v566nQQ/exec';
+
+export const GOOGLE_ARMADA_DRIVE_FOLDER_ID = '1Ch63swBO71_GofpT6BTov3f-O1Q3wjyZ';
+export const GOOGLE_ARMADA_DRIVE_FOLDER_URL =
+  'https://drive.google.com/drive/folders/1Ch63swBO71_GofpT6BTov3f-O1Q3wjyZ?usp=sharing';
+
+
 export const STORAGE_KEYS = {
   THEME: 'spd_theme_softui',
   USER: 'spd_logged_user',
@@ -30,6 +38,7 @@ export const STORAGE_KEYS = {
   ARMADA_MAINTENANCE: 'spd_armada_maintenance',
   ARMADA_PERMINTAAN_BARANG: 'spd_armada_permintaan_barang',
   ARMADA_KENDALA: 'spd_armada_kendala',
+  ARMADA_ACCOUNTS: 'spd_armada_accounts',
 } as const;
 
 export const DIVISIONS = ['Karyawan limbah', 'Supir B3', 'Supir SPD'] as const;
@@ -44,6 +53,14 @@ export const ACCOUNT_ROLES = [
   'Manajer Operasional',
   'Supervisor',
   'Staff',
+] as const;
+
+export const ARMADA_ACCOUNT_ROLES = [
+  'Super Admin',
+  'Admin Armada',
+  'Kepala Armada',
+  'Finance',
+  'Mekanik',
   'Sopir',
 ] as const;
 

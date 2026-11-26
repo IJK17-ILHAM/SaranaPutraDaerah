@@ -6,8 +6,10 @@ import {
   CheckCircle2,
   ClipboardCheck,
   Clock,
+  CloudUpload,
   Database,
   FileSpreadsheet,
+  FolderOpen,
   KeyRound,
   LayoutDashboard,
   LogOut,
@@ -15,6 +17,7 @@ import {
   Menu,
   Package,
   Palette,
+  RefreshCw,
   Route,
   Search,
   ShieldAlert,
@@ -22,16 +25,22 @@ import {
   Smartphone,
   Truck,
   Upload,
+  Users,
   Wallet,
   Wrench,
   X,
 } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { SPD_NAVY_GRADIENT, SpdLogoWordmark } from '../../components/common/SpdLogo';
-import { STORAGE_KEYS, type ThemeId } from '../../config/constants';
+import {
+  GOOGLE_ARMADA_DRIVE_FOLDER_URL,
+  STORAGE_KEYS,
+  type ThemeId,
+} from '../../config/constants';
 import {
   computePermintaanBarangStatus,
   generateNextArmadaCode,
+  loadStoredArmadaAccounts,
   loadStoredArmadaKendala,
   loadStoredArmadaLokasi,
   loadStoredArmadaMaintenance,
@@ -43,6 +52,7 @@ import {
   loadStoredArmadaTarif,
   loadStoredArmadaUangJalan,
   loadStoredArmadaUnits,
+  saveStoredArmadaAccounts,
   saveStoredArmadaKendala,
   saveStoredArmadaLokasi,
   saveStoredArmadaMaintenance,
@@ -55,7 +65,19 @@ import {
   saveStoredArmadaUangJalan,
   saveStoredArmadaUnits,
 } from '../../data/armadaSeed';
+import {
+  deleteArmadaRecordFromSPS,
+  fetchArmadaAllFromSPS,
+  pushAllArmadaToSPS,
+  syncArmadaCollectionToSPS,
+  syncArmadaRecordToSPS,
+  uploadArmadaFileToDrive,
+  type ArmadaCollectionKey,
+  type ArmadaDriveMeta,
+} from '../../services/armadaApi';
 import type {
+  ArmadaAccount,
+  ArmadaAccountInput,
   ArmadaKendalaKategori,
   ArmadaKendalaReport,
   ArmadaLokasi,
@@ -74,6 +96,7 @@ import type {
   ArmadaTarifInput,
   ArmadaUangJalan,
   ArmadaUnit,
+  ArmadaUnitBerkas,
   ArmadaUnitInput,
   MaintenancePriority,
   P2HChecklistItem,
@@ -98,6 +121,7 @@ import {
   isActiveSopirSession,
   readStoredUserSession,
 } from '../../utils/portalAuth';
+import { AkunArmadaPage } from './AkunArmadaPage';
 import { LokasiPage } from './LokasiPage';
 import { HasilP2HPage, MaintenancePage, PermintaanBarangPage } from './P2HMaintenancePage';
 import { PelangganPage } from './PelangganPage';
@@ -128,6 +152,7 @@ const MENU_TITLE_MAP: Record<ArmadaMenuId, string> = {
   'armada-master-pelanggan': 'Master Data → Pelanggan',
   'armada-master-lokasi': 'Master Data → Lokasi Muat–Bongkar',
   'armada-master-tarif': 'Master Data → Tarif',
+  'armada-akun': 'Pengaturan → Kelola Akun Armada',
 };
 
 export function ArmadaDashboardPage() {
@@ -162,6 +187,8 @@ export function ArmadaDashboardPage() {
   const [kendalaList, setKendalaList] = useState<ArmadaKendalaReport[]>(() =>
     loadStoredArmadaKendala(),
   );
+  const [accounts, setAccounts] = useState<ArmadaAccount[]>(() => loadStoredArmadaAccounts());
+  const [isSyncingSps, setIsSyncingSps] = useState(false);
 
   // Cross-navigation selection states
   const [selectedUnitId, setSelectedUnitId] = useState<string | null>(null);
@@ -176,10 +203,19 @@ export function ArmadaDashboardPage() {
 
   const [toastMsg, setToastMsg] = useState<string | null>(null);
   const spsInputRef = useRef<HTMLInputElement | null>(null);
+  const skipNextSpsSyncRef = useRef(false);
+  const prevSpsSnapRef = useRef<Record<ArmadaCollectionKey, Array<{ id: string }>> | null>(null);
 
   // Dashboard filters
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<'ALL' | ArmadaOperationalStatus>('ALL');
+
+  const notify = useCallback((message: string) => {
+    setToastMsg(message);
+    window.setTimeout(() => {
+      setToastMsg((curr) => (curr === message ? null : curr));
+    }, 4000);
+  }, []);
 
   useEffect(() => {
     document.body.setAttribute('data-theme', theme);
@@ -192,6 +228,196 @@ export function ArmadaDashboardPage() {
     }
   }, [session]);
 
+  const refreshArmadaFromSPS = useCallback(
+    async (showNotice = false) => {
+      setIsSyncingSps(true);
+      try {
+        const parsed = await fetchArmadaAllFromSPS();
+        if (parsed.updated) {
+          skipNextSpsSyncRef.current = true;
+          if (parsed.units) {
+            setUnits(parsed.units);
+            saveStoredArmadaUnits(parsed.units);
+          }
+          if (parsed.pelanggan) {
+            setPelanggan(parsed.pelanggan);
+            saveStoredArmadaPelanggan(parsed.pelanggan);
+          }
+          if (parsed.lokasi) {
+            setLokasi(parsed.lokasi);
+            saveStoredArmadaLokasi(parsed.lokasi);
+          }
+          if (parsed.tarif) {
+            setTarif(parsed.tarif);
+            saveStoredArmadaTarif(parsed.tarif);
+          }
+          if (parsed.perjalanan) {
+            setPerjalanan(parsed.perjalanan);
+            saveStoredArmadaPerjalanan(parsed.perjalanan);
+          }
+          if (parsed.uangJalan) {
+            setUangJalan(parsed.uangJalan);
+            saveStoredArmadaUangJalan(parsed.uangJalan);
+          }
+          if (parsed.sewa) {
+            setSewaList(parsed.sewa);
+            saveStoredArmadaSewa(parsed.sewa);
+          }
+          if (parsed.p2h) {
+            setP2hList(parsed.p2h);
+            saveStoredArmadaP2H(parsed.p2h);
+          }
+          if (parsed.maintenance) {
+            setMaintenanceList(parsed.maintenance);
+            saveStoredArmadaMaintenance(parsed.maintenance);
+          }
+          if (parsed.permintaanBarang) {
+            setPermintaanBarang(parsed.permintaanBarang);
+            saveStoredArmadaPermintaanBarang(parsed.permintaanBarang);
+          }
+          if (parsed.kendala) {
+            setKendalaList(parsed.kendala);
+            saveStoredArmadaKendala(parsed.kendala);
+          }
+          if (parsed.accounts) {
+            setAccounts(parsed.accounts);
+            saveStoredArmadaAccounts(parsed.accounts);
+          }
+          if (showNotice) {
+            notify('Data Armada berhasil disinkronkan dari SPS Armada.');
+          }
+        } else if (showNotice) {
+          notify('SPS Armada terhubung, namun tab masih kosong. Gunakan "Kirim ke SPS" untuk mengisi awal.');
+        }
+      } catch {
+        if (showNotice) {
+          notify('Belum dapat terhubung ke SPS Armada. Pastikan script doGet/doPost sudah diterapkan.');
+        }
+      } finally {
+        setIsSyncingSps(false);
+      }
+    },
+    [notify],
+  );
+
+  // Pull latest Armada data from SPS Armada on initial load
+  useEffect(() => {
+    if (!session || !canAccessArmadaSession(session)) return;
+    void refreshArmadaFromSPS(false);
+  }, [refreshArmadaFromSPS, session]);
+
+  // Automatic background diff-sync to SPS Armada whenever any Armada collection changes locally
+  useEffect(() => {
+    const currentSnap: Record<ArmadaCollectionKey, Array<{ id: string }>> = {
+      units,
+      pelanggan,
+      lokasi,
+      tarif,
+      perjalanan,
+      uangJalan,
+      sewa: sewaList,
+      p2h: p2hList,
+      maintenance: maintenanceList,
+      permintaanBarang,
+      kendala: kendalaList,
+      accounts,
+    };
+
+    if (!prevSpsSnapRef.current) {
+      prevSpsSnapRef.current = currentSnap;
+      return;
+    }
+
+    if (skipNextSpsSyncRef.current) {
+      skipNextSpsSyncRef.current = false;
+      prevSpsSnapRef.current = currentSnap;
+      return;
+    }
+
+    const prevSnap = prevSpsSnapRef.current;
+    prevSpsSnapRef.current = currentSnap;
+
+    (Object.keys(currentSnap) as ArmadaCollectionKey[]).forEach((key) => {
+      const prevArr = prevSnap[key];
+      const nextArr = currentSnap[key];
+      if (prevArr === nextArr) return;
+
+      const prevMap = new Map(prevArr.map((item) => [item.id, item]));
+      const nextMap = new Map(nextArr.map((item) => [item.id, item]));
+
+      const changed: Array<{ id: string }> = [];
+      nextArr.forEach((item) => {
+        if (prevMap.get(item.id) !== item) {
+          changed.push(item);
+        }
+      });
+
+      const deletedIds: string[] = [];
+      prevArr.forEach((item) => {
+        if (!nextMap.has(item.id)) {
+          deletedIds.push(item.id);
+        }
+      });
+
+      if (changed.length === 0 && deletedIds.length === 0) return;
+
+      if (changed.length > 3) {
+        void syncArmadaCollectionToSPS(key, nextArr).catch(() => undefined);
+      } else {
+        const unitById = new Map(units.map((u) => [u.id, u]));
+        const prjById = new Map(perjalanan.map((p) => [p.id, p]));
+        const resolveDriveMeta = (record: Record<string, unknown>): ArmadaDriveMeta => {
+          let nomorPolisi = typeof record.nomorPolisi === 'string' ? record.nomorPolisi : '';
+          let kodeUnit = typeof record.kodeUnit === 'string' ? record.kodeUnit : '';
+          let unitId = typeof record.unitId === 'string' ? record.unitId : '';
+          if (!unitId && typeof record.perjalananId === 'string') {
+            unitId = prjById.get(record.perjalananId)?.unitId || '';
+          }
+          if ((!nomorPolisi || !kodeUnit) && unitId) {
+            const matchedUnit = unitById.get(unitId);
+            if (matchedUnit) {
+              nomorPolisi = nomorPolisi || matchedUnit.nomorPolisi;
+              kodeUnit = kodeUnit || matchedUnit.kodeUnit;
+            }
+          }
+          const refNumber = String(
+            record.nomorP2H ||
+              record.nomorPengajuan ||
+              record.nomorSewa ||
+              record.nomorUangJalan ||
+              record.nomorPenugasan ||
+              record.nomorLaporan ||
+              kodeUnit ||
+              record.id ||
+              '',
+          );
+          return { nomorPolisi, kodeUnit, refNumber };
+        };
+
+        changed.forEach((item) => {
+          const meta = resolveDriveMeta(item as unknown as Record<string, unknown>);
+          void syncArmadaRecordToSPS(key, item, meta).catch(() => undefined);
+        });
+        deletedIds.forEach((id) => {
+          void deleteArmadaRecordFromSPS(key, id).catch(() => undefined);
+        });
+      }
+    });
+  }, [
+    accounts,
+    kendalaList,
+    lokasi,
+    maintenanceList,
+    p2hList,
+    pelanggan,
+    perjalanan,
+    permintaanBarang,
+    sewaList,
+    tarif,
+    uangJalan,
+    units,
+  ]);
+
   // Cross-tab storage sync
   useEffect(() => {
     const handleStorage = (e: StorageEvent) => {
@@ -200,30 +426,58 @@ export function ArmadaDashboardPage() {
         const next = localStorage.getItem(STORAGE_KEYS.THEME);
         if (next === 'eco' || next === 'dark' || next === 'spd') setTheme(next);
       }
-      if (e.key === STORAGE_KEYS.ARMADA_UNITS) setUnits(loadStoredArmadaUnits());
-      if (e.key === STORAGE_KEYS.ARMADA_PELANGGAN) setPelanggan(loadStoredArmadaPelanggan());
-      if (e.key === STORAGE_KEYS.ARMADA_LOKASI) setLokasi(loadStoredArmadaLokasi());
-      if (e.key === STORAGE_KEYS.ARMADA_TARIF) setTarif(loadStoredArmadaTarif());
-      if (e.key === STORAGE_KEYS.ARMADA_PERJALANAN) setPerjalanan(loadStoredArmadaPerjalanan());
-      if (e.key === STORAGE_KEYS.ARMADA_UANG_JALAN) setUangJalan(loadStoredArmadaUangJalan());
-      if (e.key === STORAGE_KEYS.ARMADA_SEWA) setSewaList(loadStoredArmadaSewa());
-      if (e.key === STORAGE_KEYS.ARMADA_P2H) setP2hList(loadStoredArmadaP2H());
-      if (e.key === STORAGE_KEYS.ARMADA_MAINTENANCE)
+      if (e.key === STORAGE_KEYS.ARMADA_UNITS) {
+        skipNextSpsSyncRef.current = true;
+        setUnits(loadStoredArmadaUnits());
+      }
+      if (e.key === STORAGE_KEYS.ARMADA_PELANGGAN) {
+        skipNextSpsSyncRef.current = true;
+        setPelanggan(loadStoredArmadaPelanggan());
+      }
+      if (e.key === STORAGE_KEYS.ARMADA_LOKASI) {
+        skipNextSpsSyncRef.current = true;
+        setLokasi(loadStoredArmadaLokasi());
+      }
+      if (e.key === STORAGE_KEYS.ARMADA_TARIF) {
+        skipNextSpsSyncRef.current = true;
+        setTarif(loadStoredArmadaTarif());
+      }
+      if (e.key === STORAGE_KEYS.ARMADA_PERJALANAN) {
+        skipNextSpsSyncRef.current = true;
+        setPerjalanan(loadStoredArmadaPerjalanan());
+      }
+      if (e.key === STORAGE_KEYS.ARMADA_UANG_JALAN) {
+        skipNextSpsSyncRef.current = true;
+        setUangJalan(loadStoredArmadaUangJalan());
+      }
+      if (e.key === STORAGE_KEYS.ARMADA_SEWA) {
+        skipNextSpsSyncRef.current = true;
+        setSewaList(loadStoredArmadaSewa());
+      }
+      if (e.key === STORAGE_KEYS.ARMADA_P2H) {
+        skipNextSpsSyncRef.current = true;
+        setP2hList(loadStoredArmadaP2H());
+      }
+      if (e.key === STORAGE_KEYS.ARMADA_MAINTENANCE) {
+        skipNextSpsSyncRef.current = true;
         setMaintenanceList(loadStoredArmadaMaintenance());
-      if (e.key === STORAGE_KEYS.ARMADA_PERMINTAAN_BARANG)
+      }
+      if (e.key === STORAGE_KEYS.ARMADA_PERMINTAAN_BARANG) {
+        skipNextSpsSyncRef.current = true;
         setPermintaanBarang(loadStoredArmadaPermintaanBarang());
-      if (e.key === STORAGE_KEYS.ARMADA_KENDALA) setKendalaList(loadStoredArmadaKendala());
+      }
+      if (e.key === STORAGE_KEYS.ARMADA_KENDALA) {
+        skipNextSpsSyncRef.current = true;
+        setKendalaList(loadStoredArmadaKendala());
+      }
+      if (e.key === STORAGE_KEYS.ARMADA_ACCOUNTS) {
+        skipNextSpsSyncRef.current = true;
+        setAccounts(loadStoredArmadaAccounts());
+      }
     };
     window.addEventListener('storage', handleStorage);
     return () => window.removeEventListener('storage', handleStorage);
   }, []);
-
-  const notify = (message: string) => {
-    setToastMsg(message);
-    window.setTimeout(() => {
-      setToastMsg((curr) => (curr === message ? null : curr));
-    }, 4000);
-  };
 
   const actorName = session?.nama || session?.username || session?.email || 'Admin Armada';
 
@@ -1362,6 +1616,147 @@ export function ArmadaDashboardPage() {
   };
 
   // ==========================================
+  // KELOLA AKUN KHUSUS ARMADA (SPS ARMADA)
+  // ==========================================
+  const handleSaveArmadaAccount = (input: ArmadaAccountInput) => {
+    const now = new Date().toISOString();
+    setAccounts((prev) => {
+      let next: ArmadaAccount[];
+      if (input.id) {
+        next = prev.map((a) => {
+          if (a.id !== input.id) return a;
+          return {
+            ...a,
+            idAkun: input.idAkun || a.idAkun || a.id,
+            namaLengkap: input.namaLengkap,
+            username: input.username,
+            passwordPin: input.passwordPin ? input.passwordPin : a.passwordPin,
+            roleAkses: input.roleAkses,
+            status: input.status,
+            unitUtamaKode: input.unitUtamaKode,
+            catatan: input.catatan || '',
+            updatedAt: now,
+          };
+        });
+        notify(`Akun Armada "${input.username}" diperbarui dan dikirim ke SPS Armada.`);
+      } else {
+        const nextCode =
+          input.idAkun ||
+          generateNextArmadaCode(
+            'ARM-USR',
+            prev.map((a) => a.idAkun || a.id),
+          );
+        const created: ArmadaAccount = {
+          id: nextCode,
+          idAkun: nextCode,
+          namaLengkap: input.namaLengkap,
+          username: input.username,
+          passwordPin: input.passwordPin || 'SPD123',
+          roleAkses: input.roleAkses,
+          status: input.status,
+          unitUtamaKode: input.unitUtamaKode,
+          catatan: input.catatan || '',
+          createdAt: now,
+          updatedAt: now,
+        };
+        next = [created, ...prev];
+        notify(`Akun Armada "${created.username}" disimpan ke tab Akun Armada (SPS Armada).`);
+      }
+      saveStoredArmadaAccounts(next);
+      return next;
+    });
+  };
+
+  const handleDeleteArmadaAccount = (account: ArmadaAccount) => {
+    setAccounts((prev) => {
+      const next = prev.filter((a) => a.id !== account.id);
+      saveStoredArmadaAccounts(next);
+      return next;
+    });
+    notify(`Akun Armada "${account.username}" dihapus dari SPS Armada.`);
+  };
+
+  const handlePushAllToSps = async () => {
+    setIsSyncingSps(true);
+    try {
+      await pushAllArmadaToSPS({
+        units,
+        pelanggan,
+        lokasi,
+        tarif,
+        perjalanan,
+        uangJalan,
+        sewa: sewaList,
+        p2h: p2hList,
+        maintenance: maintenanceList,
+        permintaanBarang,
+        kendala: kendalaList,
+        accounts,
+      });
+      notify('Seluruh tab data & Akun Armada dikirim ke SPS Armada.');
+    } catch {
+      notify('Gagal mengirim data ke SPS Armada. Periksa koneksi atau deployment Apps Script.');
+    } finally {
+      setIsSyncingSps(false);
+    }
+  };
+
+  const handleUploadUnitBerkas = async (
+    unit: ArmadaUnit,
+    payload: {
+      jenis: ArmadaUnitBerkas['jenis'];
+      berlakuSampai?: string;
+      catatan?: string;
+      fileName: string;
+      dataUrl: string;
+    },
+  ) => {
+    const now = new Date().toISOString();
+    const newBerkas: ArmadaUnitBerkas = {
+      id: `BRK_${Date.now()}_${Math.random().toString(36).slice(2, 5).toUpperCase()}`,
+      jenis: payload.jenis,
+      namaFile: payload.fileName,
+      berlakuSampai: payload.berlakuSampai,
+      catatan: payload.catatan,
+      driveUrl: unit.driveFolderUrl || GOOGLE_ARMADA_DRIVE_FOLDER_URL,
+      uploadedAt: now,
+      uploadedBy: actorName,
+    };
+
+    try {
+      await uploadArmadaFileToDrive({
+        nomorPolisi: unit.nomorPolisi,
+        kodeUnit: unit.kodeUnit,
+        kategori: 'Berkas Kendaraan',
+        refNumber: `${payload.jenis}_${unit.kodeUnit}`,
+        fileName: payload.fileName,
+        dataUrl: payload.dataUrl,
+        catatan: payload.catatan,
+      });
+    } catch {
+      // Tetap simpan metadata lokal jika offline
+    }
+
+    setUnits((prev) => {
+      const next = prev.map((u) =>
+        u.id === unit.id
+          ? {
+              ...u,
+              berkasList: [newBerkas, ...(u.berkasList || [])],
+              updatedAt: now,
+            }
+          : u,
+      );
+      saveStoredArmadaUnits(next);
+      return next;
+    });
+
+    notify(
+      `Dokumen ${payload.jenis} (${payload.fileName}) dikirim ke folder Google Drive ${unit.nomorPolisi}.`,
+    );
+  };
+
+  // ==========================================
   // DASHBOARD METRICS & FILTERING
   // ==========================================
   const stats = useMemo(() => {
@@ -1535,6 +1930,15 @@ export function ArmadaDashboardPage() {
           <div className="flex items-center gap-1.5">
             <button
               type="button"
+              onClick={() => void refreshArmadaFromSPS(true)}
+              disabled={isSyncingSps}
+              aria-label="Sinkronkan SPS Armada"
+              className="p-2 rounded-xl bg-white/10 text-white"
+            >
+              <RefreshCw className={`w-4 h-4 ${isSyncingSps ? 'animate-spin' : ''}`} />
+            </button>
+            <button
+              type="button"
               onClick={handleCycleTheme}
               aria-label="Ganti tema"
               className="p-2 rounded-xl bg-white/10 text-white"
@@ -1653,6 +2057,18 @@ export function ArmadaDashboardPage() {
         { id: 'armada-master-tarif', label: 'Tarif', icon: Banknote, count: tarif.length },
       ],
     },
+    {
+      title: 'Pengaturan Armada',
+      icon: Users,
+      items: [
+        {
+          id: 'armada-akun',
+          label: 'Kelola Akun Armada',
+          icon: Users,
+          count: accounts.length,
+        },
+      ],
+    },
   ];
 
   const renderSidebarNav = () => (
@@ -1736,6 +2152,30 @@ export function ArmadaDashboardPage() {
           </div>
 
           <div className="pt-3 border-t border-white/10 space-y-2">
+            {/* Live Google Sheet SPS Armada Sync */}
+            <div className="grid grid-cols-2 gap-1.5">
+              <button
+                type="button"
+                onClick={() => void refreshArmadaFromSPS(true)}
+                disabled={isSyncingSps}
+                title="Tarik data terbaru dari Google Sheet SPS Armada"
+                className="inline-flex items-center justify-center gap-1 px-2 py-2 rounded-xl bg-white/10 hover:bg-white/15 text-[11px] font-semibold text-white"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${isSyncingSps ? 'animate-spin' : ''}`} />
+                <span>Tarik SPS</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => void handlePushAllToSps()}
+                disabled={isSyncingSps}
+                title="Kirim seluruh tab Armada & Akun Armada ke Google Sheet SPS Armada"
+                className="inline-flex items-center justify-center gap-1 px-2 py-2 rounded-xl bg-white/10 hover:bg-white/15 text-[11px] font-semibold text-white"
+              >
+                <CloudUpload className="w-3.5 h-3.5" />
+                <span>Kirim SPS</span>
+              </button>
+            </div>
+
             {/* Unified SPS Armada Excel Export & Import */}
             <div className="grid grid-cols-2 gap-1.5">
               <button
@@ -1757,6 +2197,17 @@ export function ArmadaDashboardPage() {
                 <span>Impor SPS</span>
               </button>
             </div>
+
+            <a
+              href={GOOGLE_ARMADA_DRIVE_FOLDER_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              title="Buka Google Drive Armada (folder otomatis per nomor polisi)"
+              className="w-full inline-flex items-center justify-center gap-1.5 px-2.5 py-2 rounded-xl bg-white/10 hover:bg-white/15 text-[11px] font-semibold text-white"
+            >
+              <FolderOpen className="w-3.5 h-3.5" />
+              <span>Folder Drive Armada</span>
+            </a>
 
             <div className="px-2.5 py-1.5 rounded-xl bg-white/5 border border-white/10">
               <div className="text-xs font-bold text-white truncate">{actorName}</div>
@@ -1832,6 +2283,24 @@ export function ArmadaDashboardPage() {
           {renderSidebarNav()}
           <div className="pt-2 border-t border-white/10 flex flex-wrap items-center justify-between gap-2">
             <div className="flex flex-wrap items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => void refreshArmadaFromSPS(true)}
+                disabled={isSyncingSps}
+                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-white/10 text-xs text-white font-semibold"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${isSyncingSps ? 'animate-spin' : ''}`} />
+                <span>Tarik SPS</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => void handlePushAllToSps()}
+                disabled={isSyncingSps}
+                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-white/10 text-xs text-white font-semibold"
+              >
+                <CloudUpload className="w-3.5 h-3.5" />
+                <span>Kirim SPS</span>
+              </button>
               <button
                 type="button"
                 onClick={handleExportSpsWorkbook}
@@ -1922,6 +2391,7 @@ export function ArmadaDashboardPage() {
                 setSelectedMaintenanceId(id);
                 openMenu('armada-maintenance');
               }}
+              onUploadUnitBerkas={handleUploadUnitBerkas}
             />
           )}
 
@@ -1971,6 +2441,18 @@ export function ArmadaDashboardPage() {
               onSaveTarif={handleSaveTarif}
               onToggleStatus={handleToggleTarifStatus}
               onExportWorkbook={handleExportSpsWorkbook}
+            />
+          )}
+
+          {activeMenu === 'armada-akun' && (
+            <AkunArmadaPage
+              accounts={accounts}
+              units={units}
+              currentUsername={session.username || session.email || ''}
+              isSyncing={isSyncingSps}
+              onRefreshSps={() => void refreshArmadaFromSPS(true)}
+              onSaveAccount={handleSaveArmadaAccount}
+              onDeleteAccount={handleDeleteArmadaAccount}
             />
           )}
 

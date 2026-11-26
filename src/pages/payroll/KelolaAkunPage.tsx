@@ -81,8 +81,8 @@ export function KelolaAkunPage() {
       <PageHeader
         suiteLabel="Payroll"
         pageLabel="Kelola akun"
-        title="Kelola Akun Pengguna"
-        subtitle="Terhubung langsung dengan tab Akun Google Sheet."
+        title="Kelola Akun Portal Gajian"
+        subtitle="Khusus akun Portal Gajian & Kas pada tab Akun di SPS Gajian. Akun Sopir & operasional Armada dikelola terpisah pada menu Kelola Akun di /armada/ (SPS Armada)."
         actions={
           <button
             type="button"
