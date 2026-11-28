@@ -41,8 +41,7 @@ interface DraftRow {
   barangId: string;
   nama: string;
   hargaStr: string;
-  bruto: number;
-  tara: number;
+  nettoInput: number;
   pot: number;
 }
 
@@ -93,8 +92,7 @@ export function KtTransaksiPage() {
       barangId: fb.id,
       nama: fb.nama,
       hargaStr: '',
-      bruto: 0,
-      tara: 0,
+      nettoInput: 0,
       pot: fb.potDefault || 0,
     };
   }, [barangList]);
@@ -183,12 +181,13 @@ export function KtTransaksiPage() {
           const matchedBarang =
             barangList.find((b) => b.id === it.barangId) ||
             barangList.find((b) => b.nama.toLowerCase() === (it.nama || '').toLowerCase());
+          const prePotWeight =
+            it.bruto > 0 ? Math.max(0, it.bruto - (it.tara || 0)) : it.netto;
           return {
             barangId: matchedBarang?.id || it.barangId,
             nama: it.nama,
             hargaStr: it.harga > 0 ? formatNumberWithDots(it.harga) : '',
-            bruto: it.bruto,
-            tara: it.tara,
+            nettoInput: prePotWeight,
             pot: it.pot,
           };
         }),
@@ -225,7 +224,7 @@ export function KtTransaksiPage() {
       const harga = cleanRupiahToNumber(r.hargaStr);
       const netto = Math.max(
         0,
-        Math.round(((r.bruto || 0) - (r.tara || 0)) * (1 - (r.pot || 0) / 100)),
+        Math.round((r.nettoInput || 0) * (1 - (r.pot || 0) / 100)),
       );
       const subtotal = Math.round(netto * harga);
       return { ...r, harga, netto, subtotal };
@@ -397,7 +396,7 @@ export function KtTransaksiPage() {
 
   const handleRowNumberChange = (
     idx: number,
-    field: 'bruto' | 'tara' | 'pot',
+    field: 'nettoInput' | 'pot',
     value: number,
   ) => {
     setRows((prev) => prev.map((r, i) => (i === idx ? { ...r, [field]: value } : r)));
@@ -416,9 +415,9 @@ export function KtTransaksiPage() {
       return;
     }
 
-    const weightedRows = computedRows.filter((r) => r.netto > 0 || r.bruto > 0);
+    const weightedRows = computedRows.filter((r) => r.netto > 0 || r.nettoInput > 0);
     if (!weightedRows.length) {
-      showToast('Isi berat Bruto minimal 1 barang.', 'warning');
+      showToast('Isi berat Netto minimal 1 barang.', 'warning');
       return;
     }
 
@@ -436,8 +435,8 @@ export function KtTransaksiPage() {
       barangId: r.barangId,
       nama: r.nama,
       harga: r.harga,
-      bruto: r.bruto,
-      tara: r.tara,
+      bruto: r.nettoInput,
+      tara: 0,
       pot: r.pot,
       netto: r.netto,
       subtotal: r.subtotal,
@@ -856,11 +855,9 @@ export function KtTransaksiPage() {
                 <tr className="t-subtle border-b t-border">
                   <th className="py-3 px-3 t-th-label min-w-[150px]">Barang</th>
                   <th className="py-3 px-2 t-th-label text-right min-w-[118px]">Harga/kg *</th>
-                  <th className="py-3 px-2 t-th-label text-right w-22">Bruto</th>
-                  <th className="py-3 px-2 t-th-label text-right w-20">Tara</th>
-                  <th className="py-3 px-2 t-th-label text-right w-16">Pot.%</th>
-                  <th className="py-3 px-2 t-th-label text-right w-22">Netto</th>
-                  <th className="py-3 px-3 t-th-label text-right w-28">Subtotal</th>
+                  <th className="py-3 px-2 t-th-label text-right w-20">Pot.%</th>
+                  <th className="py-3 px-2 t-th-label text-right w-28">Netto (kg)</th>
+                  <th className="py-3 px-3 t-th-label text-right w-32">Subtotal</th>
                   <th className="py-3 px-2 w-9" />
                 </tr>
               </thead>
@@ -868,7 +865,7 @@ export function KtTransaksiPage() {
                 {computedRows.map((r, idx) => {
                   const hasBarangOption = barangList.some((b) => b.id === r.barangId);
                   const isMissingPrice =
-                    showPriceValidation && (r.bruto > 0 || r.netto > 0) && r.harga <= 0;
+                    showPriceValidation && (r.nettoInput > 0 || r.netto > 0) && r.harga <= 0;
                   return (
                     <tr key={idx}>
                       <td className="py-2.5 px-3">
@@ -917,30 +914,6 @@ export function KtTransaksiPage() {
                       <td className="py-2.5 px-2">
                         <input
                           type="number"
-                          value={r.bruto}
-                          min={0}
-                          step={1}
-                          onChange={(e) =>
-                            handleRowNumberChange(idx, 'bruto', parseFloat(e.target.value) || 0)
-                          }
-                          className="w-full text-right px-2 py-1.5 rounded-lg t-input font-mono-num font-bold"
-                        />
-                      </td>
-                      <td className="py-2.5 px-2">
-                        <input
-                          type="number"
-                          value={r.tara}
-                          min={0}
-                          step={1}
-                          onChange={(e) =>
-                            handleRowNumberChange(idx, 'tara', parseFloat(e.target.value) || 0)
-                          }
-                          className="w-full text-right px-2 py-1.5 rounded-lg t-input font-mono-num"
-                        />
-                      </td>
-                      <td className="py-2.5 px-2">
-                        <input
-                          type="number"
                           value={r.pot}
                           min={0}
                           max={100}
@@ -951,8 +924,27 @@ export function KtTransaksiPage() {
                           className="w-full text-right px-1.5 py-1.5 rounded-lg t-input font-mono-num"
                         />
                       </td>
-                      <td className="py-2.5 px-2 text-right font-mono-num font-bold t-text">
-                        {formatNumberWithDots(r.netto)}
+                      <td className="py-2.5 px-2">
+                        <input
+                          type="number"
+                          value={r.nettoInput}
+                          min={0}
+                          step={1}
+                          aria-label={`Netto kg untuk ${r.nama}`}
+                          onChange={(e) =>
+                            handleRowNumberChange(
+                              idx,
+                              'nettoInput',
+                              parseFloat(e.target.value) || 0,
+                            )
+                          }
+                          className="w-full text-right px-2 py-1.5 rounded-lg t-input font-mono-num font-bold"
+                        />
+                        {r.pot > 0 && r.nettoInput > 0 && (
+                          <div className="text-[10px] t-muted text-right font-mono-num mt-0.5">
+                            Bersih: {formatNumberWithDots(r.netto)} kg
+                          </div>
+                        )}
                       </td>
                       <td className="py-2.5 px-3 text-right font-mono-num font-bold t-text">
                         {formatNumberWithDots(r.subtotal)}
@@ -985,7 +977,7 @@ export function KtTransaksiPage() {
               <span>Tambah barang</span>
             </button>
             <span className="text-[11px] t-muted">
-              Netto = (Bruto &minus; Tara) &times; (1 &minus; Pot.%)
+              Subtotal = Netto &times; (1 &minus; Pot.%) &times; Harga/kg
             </span>
           </div>
 

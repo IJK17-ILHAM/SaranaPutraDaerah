@@ -752,6 +752,7 @@ export function PayrollProvider({ children }: { children: React.ReactNode }) {
       const merged: PayrollRecord = {
         ...updated,
         recordId: target.recordId || updated.recordId || makeEntryId('REC'),
+        sheetName: updated.sheetName || target.sheetName,
         siklusGaji: getSiklusDisplay(updated),
         savedAt: new Date().toISOString(),
       };
@@ -802,7 +803,12 @@ export function PayrollProvider({ children }: { children: React.ReactNode }) {
     });
 
     try {
-      await deletePayrollFromSPS(target.nik || '', target.nama || '', getPeriodeDisplay(target));
+      await deletePayrollFromSPS(
+        target.nik || '',
+        target.nama || '',
+        getPeriodeDisplay(target),
+        target.sheetName,
+      );
     } catch {
       // Legacy Google Apps Script may not implement deletePayroll yet; local cache already updated
     }

@@ -412,10 +412,15 @@ export function InputGajiPage() {
           ? lUpahHari
           : lUpahJam;
 
+    const matchedDraft = editingDraftId
+      ? localDrafts.find((d) => d.localDraftId === editingDraftId)
+      : undefined;
+
     return {
       action: 'save',
       recordId: editingPayrollRecord?.recordId,
       localDraftId: editingDraftId || undefined,
+      sheetName: editingPayrollRecord?.sheetName || matchedDraft?.sheetName,
       nama: cleanNama,
       nik: cleanNik,
       divisi,

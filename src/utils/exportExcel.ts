@@ -1,11 +1,17 @@
 import * as XLSX from 'xlsx';
 import type { KtBarang, KtKasOps, KtPiutangMitra, KtTransaction } from '../types/kasTonase';
-import type { PayrollRecord } from '../types/payroll';
+import type { DivisionName, PayrollRecord } from '../types/payroll';
 import { getTodayISO } from './format';
 import { calculateTHP, getPeriodeDisplay, getSkemaDisplay, getStatusDisplay } from './payrollCalc';
 
-export function exportPayrollToExcelMultiSheet(items: PayrollRecord[]): boolean {
-  if (!items.length) return false;
+export function exportPayrollToExcelMultiSheet(
+  items: PayrollRecord[],
+  selectedDivisions?: DivisionName[],
+): boolean {
+  const allowed =
+    selectedDivisions && selectedDivisions.length > 0 ? new Set(selectedDivisions) : null;
+  const scopedItems = allowed ? items.filter((d) => allowed.has(getSkemaDisplay(d))) : items;
+  if (!scopedItems.length) return false;
 
   const mapRows = (list: PayrollRecord[]) =>
     list.map((d, idx) => {
@@ -39,24 +45,33 @@ export function exportPayrollToExcelMultiSheet(items: PayrollRecord[]): boolean 
     });
 
   const wb = XLSX.utils.book_new();
-  const limbah = items.filter((d) => getSkemaDisplay(d) === 'Karyawan limbah');
-  const b3 = items.filter((d) => getSkemaDisplay(d) === 'Supir B3');
-  const spd = items.filter((d) => getSkemaDisplay(d) === 'Supir SPD');
+  const limbah = scopedItems.filter((d) => getSkemaDisplay(d) === 'Karyawan limbah');
+  const b3 = scopedItems.filter((d) => getSkemaDisplay(d) === 'Supir B3');
+  const spd = scopedItems.filter((d) => getSkemaDisplay(d) === 'Supir SPD');
 
+  const sheetNames: string[] = [];
   if (limbah.length) {
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(mapRows(limbah)), 'Karyawan Limbah');
+    sheetNames.push('Karyawan_Limbah');
   }
   if (b3.length) {
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(mapRows(b3)), 'Supir B3');
+    sheetNames.push('Supir_B3');
   }
   if (spd.length) {
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(mapRows(spd)), 'Supir SPD');
+    sheetNames.push('Supir_SPD');
   }
-  if (!limbah.length && !b3.length && !spd.length) {
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(mapRows(items)), 'Rekap Gaji');
+  if (!sheetNames.length) {
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(mapRows(scopedItems)), 'Rekap Gaji');
   }
 
-  XLSX.writeFile(wb, `Rekap_Gaji_SPD_${getTodayISO()}.xlsx`);
+  const fileSuffix =
+    allowed && sheetNames.length > 0 && sheetNames.length < 3
+      ? sheetNames.join('_')
+      : 'SPD';
+
+  XLSX.writeFile(wb, `Rekap_Gaji_${fileSuffix}_${getTodayISO()}.xlsx`);
   return true;
 }
 

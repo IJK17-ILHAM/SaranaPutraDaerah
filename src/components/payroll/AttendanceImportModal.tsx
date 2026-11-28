@@ -15,7 +15,13 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { DIVISIONS, PAYROLL_CYCLES } from '../../config/constants';
 import { useApp } from '../../context/AppContext';
 import { usePayroll } from '../../context/PayrollContext';
-import type { DivisionName, PayrollCycle, PayrollRecord } from '../../types/payroll';
+import type {
+  DivisionName,
+  PayrollCycle,
+  PayrollRecord,
+  PayrollSheetTargetMode,
+} from '../../types/payroll';
+import { resolvePayrollTargetSheet } from '../../services/payrollApi';
 import {
   type AttendancePreviewRow,
   type ParsedExcelSheet,
@@ -111,6 +117,8 @@ export function AttendanceImportModal({
         : 'Periode Import'),
   );
   const [rows, setRows] = useState<AttendancePreviewRow[]>([]);
+  const [sheetTargetMode, setSheetTargetMode] = useState<PayrollSheetTargetMode>('per-periode');
+  const [customSheetName, setCustomSheetName] = useState('');
   const [loadingFile, setLoadingFile] = useState(false);
   const [importingDirect, setImportingDirect] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
@@ -156,6 +164,35 @@ export function AttendanceImportModal({
     () => selectedRows.reduce((sum, r) => sum + calcRowThp(r).thp, 0),
     [selectedRows],
   );
+
+  const effectivePeriodeLabel = useMemo(
+    () => periodeLabel.trim() || formatDateRangeLabel(startISO, endISO),
+    [endISO, periodeLabel, startISO],
+  );
+
+  const targetSheetSummary = useMemo(() => {
+    const counts = new Map<string, number>();
+    const source = selectedRows.length > 0 ? selectedRows : rows;
+    if (source.length === 0) {
+      const sample = resolvePayrollTargetSheet(
+        sheetTargetMode,
+        effectivePeriodeLabel,
+        'Mingguan',
+        customSheetName,
+      );
+      return [{ name: sample, count: 0 }];
+    }
+    source.forEach((r) => {
+      const tab = resolvePayrollTargetSheet(
+        sheetTargetMode,
+        effectivePeriodeLabel,
+        r.siklusGaji,
+        customSheetName,
+      );
+      counts.set(tab, (counts.get(tab) || 0) + 1);
+    });
+    return Array.from(counts.entries()).map(([name, count]) => ({ name, count }));
+  }, [customSheetName, effectivePeriodeLabel, rows, selectedRows, sheetTargetMode]);
 
   // Detect which rows already exist in records for this period (so user sees "Update" badge)
   const existingPeriodKeys = useMemo(() => {
@@ -283,9 +320,16 @@ export function AttendanceImportModal({
 
       const liveSaldo = getEmployeeKasbonSaldo(r.nik, r.nama);
       const sisaSetelah = Math.max(0, liveSaldo - r.kasbon);
+      const targetSheet = resolvePayrollTargetSheet(
+        sheetTargetMode,
+        cleanPeriode,
+        r.siklusGaji,
+        customSheetName,
+      );
 
       return {
         action: 'save',
+        sheetName: targetSheet,
         nama: r.nama.trim(),
         nik: r.nik.trim().toUpperCase(),
         divisi: r.divisi,
@@ -562,6 +606,52 @@ export function AttendanceImportModal({
                 </button>
               </div>
 
+              {/* Target SPS Sheet Routing */}
+              <div className="pt-3 border-t t-border flex flex-wrap items-center justify-between gap-3 text-xs">
+                <div className="flex flex-wrap items-center gap-2.5">
+                  <span className="inline-flex items-center gap-1.5 font-bold t-text">
+                    <FileSpreadsheet className="w-3.5 h-3.5 t-link" />
+                    <span>Tujuan Sheet SPS:</span>
+                  </span>
+                  <select
+                    value={sheetTargetMode}
+                    onChange={(e) => setSheetTargetMode(e.target.value as PayrollSheetTargetMode)}
+                    aria-label="Tujuan Sheet SPS"
+                    className="t-input rounded-lg px-2.5 py-1.5 text-xs font-semibold"
+                  >
+                    <option value="per-periode">Per Periode (Gajian - Periode)</option>
+                    <option value="per-siklus">Per Siklus (Gajian Mingguan / Bulanan)</option>
+                    <option value="per-siklus-periode">
+                      Per Siklus + Periode (Mingguan / Bulanan - Periode)
+                    </option>
+                    <option value="single-gajian">Gabung ke 1 Sheet (Gajian)</option>
+                    <option value="custom">Nama Sheet Custom</option>
+                  </select>
+
+                  {sheetTargetMode === 'custom' && (
+                    <input
+                      type="text"
+                      value={customSheetName}
+                      onChange={(e) => setCustomSheetName(e.target.value)}
+                      placeholder="Contoh: Gajian Nov 2026"
+                      aria-label="Nama sheet SPS custom"
+                      className="t-input rounded-lg px-2.5 py-1.5 text-xs font-semibold w-48"
+                    />
+                  )}
+                </div>
+
+                <div className="text-[11px] t-muted flex flex-wrap items-center gap-1.5">
+                  <span>Tab SPS:</span>
+                  {targetSheetSummary.map((item, i) => (
+                    <span key={item.name} className="font-bold t-text">
+                      {i > 0 ? ' · ' : ''}
+                      {item.name}
+                      {item.count > 0 ? ` (${item.count})` : ''}
+                    </span>
+                  ))}
+                </div>
+              </div>
+
               {showMapping && (
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2.5 pt-3 border-t t-border">
                   {(
@@ -746,6 +836,18 @@ export function AttendanceImportModal({
                                   ))}
                                 </select>
                               </div>
+                              {(sheetTargetMode === 'per-siklus' ||
+                                sheetTargetMode === 'per-siklus-periode') && (
+                                <div className="text-[10px] t-link font-semibold mt-1 truncate">
+                                  &rarr;{' '}
+                                  {resolvePayrollTargetSheet(
+                                    sheetTargetMode,
+                                    effectivePeriodeLabel,
+                                    r.siklusGaji,
+                                    customSheetName,
+                                  )}
+                                </div>
+                              )}
                             </td>
 
                             {/* Gaji Pokok: Qty x Nominal Upah Pokok */}

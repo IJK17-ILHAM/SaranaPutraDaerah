@@ -6,6 +6,13 @@ export type PayrollCycle = 'Mingguan' | 'Bulanan';
 
 export type SupirSpdUnit = 'trip' | 'hari';
 
+export type PayrollSheetTargetMode =
+  | 'per-periode'
+  | 'per-siklus'
+  | 'per-siklus-periode'
+  | 'single-gajian'
+  | 'custom';
+
 export interface ActiveLemburState {
   hari: boolean;
   jam: boolean;
@@ -15,6 +22,7 @@ export interface ActiveLemburState {
 export interface PayrollRecord {
   recordId?: string;
   action?: string;
+  sheetName?: string;
   nama: string;
   nik: string;
   divisi: string;
