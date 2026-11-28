@@ -1,7 +1,9 @@
 import {
   AlertTriangle,
   Banknote,
+  BellRing,
   Building2,
+  Calendar,
   CheckCircle2,
   ChevronDown,
   ClipboardCheck,
@@ -76,6 +78,10 @@ import {
   type ArmadaCollectionKey,
   type ArmadaDriveMeta,
 } from '../../services/armadaApi';
+import {
+  buildUnitDueDateReminders,
+  type DueDateKind,
+} from '../../services/googleCalendarService';
 import type {
   ArmadaAccount,
   ArmadaAccountInput,
@@ -115,7 +121,7 @@ import {
   type MasterDataTabKey,
   type SpsArmadaImportResult,
 } from '../../utils/armadaSpreadsheet';
-import { getTodayISO } from '../../utils/format';
+import { formatDateShortID, getTodayISO } from '../../utils/format';
 import {
   canAccessArmadaSession,
   clearStoredUserSession,
@@ -551,6 +557,9 @@ export function ArmadaDashboardPage() {
                 : u.statusOperasional === 'Servis'
                   ? 'Stand-by'
                   : u.statusOperasional || 'Stand-by',
+            masaBerlakuPajak: input.masaBerlakuPajak || undefined,
+            masaBerlakuStnk: input.masaBerlakuStnk || undefined,
+            pengingatHariSebelum: input.pengingatHariSebelum || u.pengingatHariSebelum || 2,
             catatan: input.catatan || '',
             updatedAt: now,
           };
@@ -576,6 +585,9 @@ export function ArmadaDashboardPage() {
           statusOperasional: input.status === 'Aktif' ? 'Stand-by' : 'Servis',
           muatanTon: 0,
           updateTerakhir: 'Baru ditambahkan',
+          masaBerlakuPajak: input.masaBerlakuPajak || undefined,
+          masaBerlakuStnk: input.masaBerlakuStnk || undefined,
+          pengingatHariSebelum: input.pengingatHariSebelum || 2,
           catatan: input.catatan || '',
           createdAt: now,
           updatedAt: now,
@@ -603,11 +615,51 @@ export function ArmadaDashboardPage() {
         nomorRangka: input.nomorRangka,
         nomorMesin: input.nomorMesin,
         status: input.status,
+        masaBerlakuPajak: input.masaBerlakuPajak || undefined,
+        masaBerlakuStnk: input.masaBerlakuStnk || undefined,
+        pengingatHariSebelum: input.pengingatHariSebelum || 2,
         catatan: input.catatan || '',
         createdAt: now,
         updatedAt: now,
       }
     );
+  };
+
+  const handleUpdateUnitCalendarLinks = (
+    updates: Array<{
+      unitId: string;
+      kind: DueDateKind;
+      eventId?: string;
+      eventLink?: string;
+    }>,
+  ) => {
+    if (updates.length === 0) return;
+    const now = new Date().toISOString();
+    setUnits((prev) => {
+      const next = prev.map((u) => {
+        const unitUpdates = updates.filter((up) => up.unitId === u.id);
+        if (unitUpdates.length === 0) return u;
+        let patched = { ...u, updatedAt: now };
+        for (const up of unitUpdates) {
+          if (up.kind === 'PAJAK') {
+            patched = {
+              ...patched,
+              calendarEventIdPajak: up.eventId,
+              calendarEventLinkPajak: up.eventLink,
+            };
+          } else {
+            patched = {
+              ...patched,
+              calendarEventIdStnk: up.eventId,
+              calendarEventLinkStnk: up.eventLink,
+            };
+          }
+        }
+        return patched;
+      });
+      saveStoredArmadaUnits(next);
+      return next;
+    });
   };
 
   const handleToggleUnitStatus = (unit: ArmadaUnit) => {
@@ -904,6 +956,47 @@ export function ArmadaDashboardPage() {
     });
     notify(`Perjalanan ${created.nomorPenugasan} berhasil dijadwalkan.`);
     return created;
+  };
+
+  const handleUpdatePerjalananMuatanWaktu = (params: {
+    id: string;
+    jenisLimbah?: string;
+    kodeLimbah?: string;
+    kemasanLimbah?: string;
+    estimasiMuatan?: string;
+    nomorManifest?: string;
+    waktuTibaMuat?: string;
+    waktuMuatMulai?: string;
+    waktuMuatSelesai?: string;
+    waktuTibaBongkar?: string;
+    waktuBongkarMulai?: string;
+    waktuBongkarSelesai?: string;
+  }) => {
+    const now = new Date().toISOString();
+    setPerjalanan((prev) => {
+      const next = prev.map((p) =>
+        p.id === params.id
+          ? {
+              ...p,
+              jenisLimbah: params.jenisLimbah?.trim() || undefined,
+              kodeLimbah: params.kodeLimbah?.trim() || undefined,
+              kemasanLimbah: params.kemasanLimbah?.trim() || undefined,
+              estimasiMuatan: params.estimasiMuatan?.trim() || undefined,
+              nomorManifest: params.nomorManifest?.trim() || undefined,
+              waktuTibaMuat: params.waktuTibaMuat?.trim() || undefined,
+              waktuMuatMulai: params.waktuMuatMulai?.trim() || undefined,
+              waktuMuatSelesai: params.waktuMuatSelesai?.trim() || undefined,
+              waktuTibaBongkar: params.waktuTibaBongkar?.trim() || undefined,
+              waktuBongkarMulai: params.waktuBongkarMulai?.trim() || undefined,
+              waktuBongkarSelesai: params.waktuBongkarSelesai?.trim() || undefined,
+              updatedAt: now,
+            }
+          : p,
+      );
+      saveStoredArmadaPerjalanan(next);
+      return next;
+    });
+    notify('Detail muatan limbah & waktu tiba/muat/bongkar berhasil diperbarui.');
   };
 
   const handleStartPerjalanan = (prj: ArmadaPerjalanan) => {
@@ -1900,6 +1993,10 @@ export function ArmadaDashboardPage() {
         u.id === unit.id
           ? {
               ...u,
+              masaBerlakuStnk:
+                payload.jenis === 'STNK' && payload.berlakuSampai
+                  ? payload.berlakuSampai
+                  : u.masaBerlakuStnk,
               berkasList: [newBerkas, ...(u.berkasList || [])],
               updatedAt: now,
             }
@@ -2581,6 +2678,8 @@ export function ArmadaDashboardPage() {
                 openMenu('armada-maintenance');
               }}
               onUploadUnitBerkas={handleUploadUnitBerkas}
+              onUpdateUnitCalendarLinks={handleUpdateUnitCalendarLinks}
+              onNotify={notify}
               onExportWorkbook={handleExportSpsWorkbook}
               onImportMasterData={handleImportMasterDataFile}
             />
@@ -2664,6 +2763,7 @@ export function ArmadaDashboardPage() {
               selectedPerjalananId={selectedPerjalananId}
               onSelectPerjalanan={setSelectedPerjalananId}
               onSavePerjalanan={handleSavePerjalanan}
+              onUpdatePerjalananMuatanWaktu={handleUpdatePerjalananMuatanWaktu}
               onStartPerjalanan={handleStartPerjalanan}
               onCompletePerjalanan={handleCompletePerjalanan}
               onCreateUangJalan={handleCreateUangJalan}
@@ -2881,6 +2981,90 @@ export function ArmadaDashboardPage() {
                   </div>
                 </div>
               </div>
+
+              {/* Upcoming STNK & Pajak Due-Date Alerts */}
+              {(() => {
+                const urgentReminders = buildUnitDueDateReminders(units).filter(
+                  (r) => r.daysRemaining <= Math.max(14, r.daysBefore),
+                );
+                if (urgentReminders.length === 0) return null;
+                return (
+                  <div className="t-card rounded-2xl p-4 space-y-2.5 text-xs">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="font-bold t-text inline-flex items-center gap-1.5">
+                        <BellRing
+                          className="w-4 h-4"
+                          style={{ color: 'var(--status-bad-text)' }}
+                        />
+                        <span>
+                          Peringatan Jatuh Tempo Pajak &amp; STNK ({urgentReminders.length})
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => openMenu('armada-master-unit')}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl t-btn-secondary text-[11px] font-bold"
+                      >
+                        <Calendar className="w-3.5 h-3.5" />
+                        <span>Kelola &amp; Sinkron Google Calendar</span>
+                      </button>
+                    </div>
+                    <div className="divide-y t-border">
+                      {urgentReminders.slice(0, 5).map((rem) => {
+                        const isOverdue = rem.daysRemaining <= 0;
+                        const isUrgent = rem.daysRemaining <= rem.daysBefore;
+                        return (
+                          <div
+                            key={rem.key}
+                            onClick={() => {
+                              setSelectedUnitId(rem.unitId);
+                              openMenu('armada-master-unit');
+                            }}
+                            className="py-2 flex flex-wrap items-center justify-between gap-2 t-row-hover cursor-pointer rounded-lg px-1"
+                          >
+                            <div>
+                              <span className="font-mono-num font-bold t-link">
+                                {rem.kodeUnit} ({rem.nomorPolisi})
+                              </span>{' '}
+                              <span className="font-semibold t-text">
+                                — {rem.kind === 'PAJAK' ? 'Pajak Tahunan' : 'STNK 5 Tahunan'}
+                              </span>{' '}
+                              <span className="t-muted font-mono-num">
+                                Jatuh tempo {formatDateShortID(rem.dueDate)}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              {rem.existingEventId && (
+                                <span
+                                  className="text-[11px] font-semibold"
+                                  style={{ color: 'var(--status-ok-text)' }}
+                                >
+                                  Di Google Calendar
+                                </span>
+                              )}
+                              <span
+                                className={`px-2 py-0.5 rounded-md text-[11px] font-bold ${
+                                  isOverdue
+                                    ? 't-status-bad'
+                                    : isUrgent
+                                      ? 't-status-warn'
+                                      : 't-status-info'
+                                }`}
+                              >
+                                {rem.daysRemaining < 0
+                                  ? `Lewat ${Math.abs(rem.daysRemaining)} hari`
+                                  : rem.daysRemaining === 0
+                                    ? 'Jatuh Tempo Hari Ini'
+                                    : `H-${rem.daysRemaining}`}
+                              </span>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })()}
 
               {/* Latest Laporan Kendala from Sopir (if any) */}
               {kendalaList.length > 0 && (

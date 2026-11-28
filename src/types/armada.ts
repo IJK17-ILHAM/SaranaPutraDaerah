@@ -47,6 +47,13 @@ export interface ArmadaUnit {
   muatanTon?: number;
   updateTerakhir?: string;
   catatan?: string;
+  masaBerlakuPajak?: string; // YYYY-MM-DD (Pajak tahunan)
+  masaBerlakuStnk?: string; // YYYY-MM-DD (STNK 5 tahunan)
+  pengingatHariSebelum?: number; // Default 2 (H-2 sebelum jatuh tempo)
+  calendarEventIdPajak?: string;
+  calendarEventLinkPajak?: string;
+  calendarEventIdStnk?: string;
+  calendarEventLinkStnk?: string;
   driveFolderUrl?: string;
   berkasList?: ArmadaUnitBerkas[];
   createdAt: string;
@@ -64,6 +71,9 @@ export interface ArmadaUnitInput {
   nomorRangka: string;
   nomorMesin: string;
   status: ArmadaUnitStatus;
+  masaBerlakuPajak?: string;
+  masaBerlakuStnk?: string;
+  pengingatHariSebelum?: number;
   catatan?: string;
 }
 

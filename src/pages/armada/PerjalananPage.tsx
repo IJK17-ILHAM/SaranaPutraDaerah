@@ -9,9 +9,11 @@ import {
   Eye,
   Lock,
   Package,
+  Pencil,
   Play,
   Plus,
   Route,
+  Save,
   Search,
   Wallet,
   X,
@@ -59,6 +61,20 @@ interface PerjalananPageProps {
   selectedPerjalananId: string | null;
   onSelectPerjalanan: (id: string | null) => void;
   onSavePerjalanan: (input: ArmadaPerjalananInput) => ArmadaPerjalanan;
+  onUpdatePerjalananMuatanWaktu: (params: {
+    id: string;
+    jenisLimbah?: string;
+    kodeLimbah?: string;
+    kemasanLimbah?: string;
+    estimasiMuatan?: string;
+    nomorManifest?: string;
+    waktuTibaMuat?: string;
+    waktuMuatMulai?: string;
+    waktuMuatSelesai?: string;
+    waktuTibaBongkar?: string;
+    waktuBongkarMulai?: string;
+    waktuBongkarSelesai?: string;
+  }) => void;
   onStartPerjalanan: (perjalanan: ArmadaPerjalanan) => void;
   onCompletePerjalanan: (perjalanan: ArmadaPerjalanan) => void;
   onCreateUangJalan: (params: {
@@ -121,6 +137,7 @@ export function PerjalananPage({
   selectedPerjalananId,
   onSelectPerjalanan,
   onSavePerjalanan,
+  onUpdatePerjalananMuatanWaktu,
   onStartPerjalanan,
   onCompletePerjalanan,
   onCreateUangJalan,
@@ -157,6 +174,21 @@ export function PerjalananPage({
   const [waktuBongkarSelesai, setWaktuBongkarSelesai] = useState('12:45');
   const [catatan, setCatatan] = useState('');
   const [formError, setFormError] = useState('');
+
+  // Inline Edit State for Ringkasan Penugasan & Rute (Muatan Limbah & Waktu Tiba/Muat/Bongkar)
+  const [editingDetailId, setEditingDetailId] = useState<string | null>(null);
+  const [editJenisLimbah, setEditJenisLimbah] = useState('');
+  const [editKodeLimbah, setEditKodeLimbah] = useState('');
+  const [editKemasanLimbah, setEditKemasanLimbah] = useState('');
+  const [editEstimasiMuatan, setEditEstimasiMuatan] = useState('');
+  const [editNomorManifest, setEditNomorManifest] = useState('');
+  const [editWaktuTibaMuat, setEditWaktuTibaMuat] = useState('');
+  const [editWaktuMuatMulai, setEditWaktuMuatMulai] = useState('');
+  const [editWaktuMuatSelesai, setEditWaktuMuatSelesai] = useState('');
+  const [editWaktuTibaBongkar, setEditWaktuTibaBongkar] = useState('');
+  const [editWaktuBongkarMulai, setEditWaktuBongkarMulai] = useState('');
+  const [editWaktuBongkarSelesai, setEditWaktuBongkarSelesai] = useState('');
+  const [editDetailError, setEditDetailError] = useState('');
 
   // Ajukan Uang Jalan Modal State
   const [ujModalOpen, setUjModalOpen] = useState(false);
@@ -557,12 +589,41 @@ export function PerjalananPage({
 
         {/* Detail Perjalanan Info Card */}
         <div className="t-card rounded-2xl p-5 space-y-4">
-          <div className="flex items-center justify-between border-b t-border pb-3">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b t-border pb-3">
             <h3 className="t-section-label">Ringkasan Penugasan &amp; Rute</h3>
-            <span className="text-[11px] font-mono-num t-muted">
-              {formatDateFullID(selectedPerjalanan.tanggalMulai)} &middot;{' '}
-              {selectedPerjalanan.jamMulai}–{selectedPerjalanan.jamSelesai}
-            </span>
+            <div className="flex flex-wrap items-center gap-2.5">
+              <span className="text-[11px] font-mono-num t-muted">
+                {formatDateFullID(selectedPerjalanan.tanggalMulai)} &middot;{' '}
+                {selectedPerjalanan.jamMulai}–{selectedPerjalanan.jamSelesai}
+              </span>
+              {selectedPerjalanan.status !== 'Dibatalkan' &&
+                editingDetailId !== selectedPerjalanan.id && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditDetailError('');
+                      setEditJenisLimbah(selectedPerjalanan.jenisLimbah || JENIS_LIMBAH_OPTIONS[0]);
+                      setEditKodeLimbah(selectedPerjalanan.kodeLimbah || '');
+                      setEditKemasanLimbah(
+                        selectedPerjalanan.kemasanLimbah || KEMASAN_LIMBAH_OPTIONS[0],
+                      );
+                      setEditEstimasiMuatan(selectedPerjalanan.estimasiMuatan || '');
+                      setEditNomorManifest(selectedPerjalanan.nomorManifest || '');
+                      setEditWaktuTibaMuat(selectedPerjalanan.waktuTibaMuat || '');
+                      setEditWaktuMuatMulai(selectedPerjalanan.waktuMuatMulai || '');
+                      setEditWaktuMuatSelesai(selectedPerjalanan.waktuMuatSelesai || '');
+                      setEditWaktuTibaBongkar(selectedPerjalanan.waktuTibaBongkar || '');
+                      setEditWaktuBongkarMulai(selectedPerjalanan.waktuBongkarMulai || '');
+                      setEditWaktuBongkarSelesai(selectedPerjalanan.waktuBongkarSelesai || '');
+                      setEditingDetailId(selectedPerjalanan.id);
+                    }}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl t-btn-secondary text-[11px] font-bold"
+                  >
+                    <Pencil className="w-3.5 h-3.5" />
+                    <span>Edit Limbah &amp; Waktu</span>
+                  </button>
+                )}
+            </div>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 text-xs">
@@ -605,106 +666,320 @@ export function PerjalananPage({
               <div className="text-[11px] t-muted mt-0.5">{bongkar?.alamatLengkap || '-'}</div>
             </div>
 
-            {(selectedPerjalanan.jenisLimbah ||
-              selectedPerjalanan.kodeLimbah ||
-              selectedPerjalanan.kemasanLimbah ||
-              selectedPerjalanan.estimasiMuatan ||
-              selectedPerjalanan.nomorManifest) && (
-              <div className="sm:col-span-2 lg:col-span-4 pt-3 border-t t-border grid grid-cols-2 sm:grid-cols-4 gap-4">
-                <div>
-                  <div className="t-field-label">Jenis &amp; Kode Limbah</div>
-                  <div className="font-semibold t-text mt-1">
-                    {selectedPerjalanan.jenisLimbah || '-'}
+            {editingDetailId === selectedPerjalanan.id ? (
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  setEditDetailError('');
+                  const muatStart = parseHHMMToMinutes(editWaktuMuatMulai);
+                  const muatEnd = parseHHMMToMinutes(editWaktuMuatSelesai);
+                  if (muatStart !== null && muatEnd !== null && muatEnd < muatStart) {
+                    setEditDetailError(
+                      'Waktu selesai muat tidak boleh lebih awal dari waktu mulai muat.',
+                    );
+                    return;
+                  }
+                  const bongkarStart = parseHHMMToMinutes(editWaktuBongkarMulai);
+                  const bongkarEnd = parseHHMMToMinutes(editWaktuBongkarSelesai);
+                  if (bongkarStart !== null && bongkarEnd !== null && bongkarEnd < bongkarStart) {
+                    setEditDetailError(
+                      'Waktu selesai bongkar tidak boleh lebih awal dari waktu mulai bongkar.',
+                    );
+                    return;
+                  }
+                  onUpdatePerjalananMuatanWaktu({
+                    id: selectedPerjalanan.id,
+                    jenisLimbah: editJenisLimbah,
+                    kodeLimbah: editKodeLimbah,
+                    kemasanLimbah: editKemasanLimbah,
+                    estimasiMuatan: editEstimasiMuatan,
+                    nomorManifest: editNomorManifest,
+                    waktuTibaMuat: editWaktuTibaMuat,
+                    waktuMuatMulai: editWaktuMuatMulai,
+                    waktuMuatSelesai: editWaktuMuatSelesai,
+                    waktuTibaBongkar: editWaktuTibaBongkar,
+                    waktuBongkarMulai: editWaktuBongkarMulai,
+                    waktuBongkarSelesai: editWaktuBongkarSelesai,
+                  });
+                  setEditingDetailId(null);
+                }}
+                className="sm:col-span-2 lg:col-span-4 pt-3 border-t t-border space-y-4"
+              >
+                {editDetailError && (
+                  <div className="p-3 rounded-xl t-status-bad font-semibold flex items-center gap-2">
+                    <AlertCircle className="w-4 h-4 shrink-0" />
+                    <span>{editDetailError}</span>
                   </div>
-                  {selectedPerjalanan.kodeLimbah && (
-                    <div className="text-[11px] font-mono-num t-muted">
-                      Kode: {selectedPerjalanan.kodeLimbah}
-                    </div>
-                  )}
-                </div>
-                <div>
-                  <div className="t-field-label">Kemasan / Wadah</div>
-                  <div className="font-semibold t-text mt-1">
-                    {selectedPerjalanan.kemasanLimbah || '-'}
-                  </div>
-                </div>
-                <div>
-                  <div className="t-field-label">Estimasi Berat / Volume</div>
-                  <div className="font-mono-num font-semibold t-text mt-1">
-                    {selectedPerjalanan.estimasiMuatan || '-'}
-                  </div>
-                </div>
-                <div>
-                  <div className="t-field-label">No. Manifest / Festronik</div>
-                  <div className="font-mono-num font-semibold t-text mt-1">
-                    {selectedPerjalanan.nomorManifest || '-'}
-                  </div>
-                </div>
-              </div>
-            )}
+                )}
 
-            {(selectedPerjalanan.waktuTibaMuat ||
-              selectedPerjalanan.waktuMuatMulai ||
-              selectedPerjalanan.waktuMuatSelesai ||
-              selectedPerjalanan.waktuTibaBongkar ||
-              selectedPerjalanan.waktuBongkarMulai ||
-              selectedPerjalanan.waktuBongkarSelesai) && (
-              <div className="sm:col-span-2 lg:col-span-4 pt-3 border-t t-border grid grid-cols-2 sm:grid-cols-4 gap-4">
-                <div>
-                  <div className="t-field-label">Waktu Tiba (Muat)</div>
-                  <div className="font-mono-num font-bold t-text mt-1">
-                    {selectedPerjalanan.waktuTibaMuat || '-'}
+                {/* Baris 1: Detail Muatan Limbah */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                  <div className="space-y-1.5">
+                    <label htmlFor="edit-jenis-limbah" className="block t-field-label">
+                      Jenis &amp; Kode Limbah
+                    </label>
+                    <select
+                      id="edit-jenis-limbah"
+                      value={editJenisLimbah}
+                      onChange={(e) => setEditJenisLimbah(e.target.value)}
+                      className="w-full px-2.5 py-2 rounded-xl t-input font-semibold"
+                    >
+                      {!JENIS_LIMBAH_OPTIONS.includes(editJenisLimbah) && editJenisLimbah && (
+                        <option value={editJenisLimbah}>{editJenisLimbah}</option>
+                      )}
+                      {JENIS_LIMBAH_OPTIONS.map((opt) => (
+                        <option key={opt} value={opt}>
+                          {opt}
+                        </option>
+                      ))}
+                    </select>
+                    <input
+                      type="text"
+                      value={editKodeLimbah}
+                      onChange={(e) => setEditKodeLimbah(e.target.value)}
+                      placeholder="Kode B3 (mis. A102d, B105d)"
+                      className="w-full px-2.5 py-1.5 rounded-xl t-input font-mono-num"
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="edit-kemasan" className="block t-field-label mb-1.5">
+                      Kemasan / Wadah
+                    </label>
+                    <select
+                      id="edit-kemasan"
+                      value={editKemasanLimbah}
+                      onChange={(e) => setEditKemasanLimbah(e.target.value)}
+                      className="w-full px-2.5 py-2 rounded-xl t-input font-semibold"
+                    >
+                      {!KEMASAN_LIMBAH_OPTIONS.includes(editKemasanLimbah) && editKemasanLimbah && (
+                        <option value={editKemasanLimbah}>{editKemasanLimbah}</option>
+                      )}
+                      {KEMASAN_LIMBAH_OPTIONS.map((opt) => (
+                        <option key={opt} value={opt}>
+                          {opt}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label htmlFor="edit-estimasi" className="block t-field-label mb-1.5">
+                      Estimasi Berat / Volume
+                    </label>
+                    <input
+                      id="edit-estimasi"
+                      type="text"
+                      value={editEstimasiMuatan}
+                      onChange={(e) => setEditEstimasiMuatan(e.target.value)}
+                      placeholder="Contoh: 4,5 Ton / 24 Drum"
+                      className="w-full px-2.5 py-2 rounded-xl t-input font-mono-num"
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="edit-manifest" className="block t-field-label mb-1.5">
+                      No. Manifest / Festronik
+                    </label>
+                    <input
+                      id="edit-manifest"
+                      type="text"
+                      value={editNomorManifest}
+                      onChange={(e) => setEditNomorManifest(e.target.value)}
+                      placeholder="Contoh: MAN-2026-0012"
+                      className="w-full px-2.5 py-2 rounded-xl t-input font-mono-num"
+                    />
                   </div>
                 </div>
-                <div>
-                  <div className="t-field-label">Waktu Muat</div>
-                  <div className="font-mono-num font-bold t-text mt-1">
-                    {selectedPerjalanan.waktuMuatMulai || '-'}
-                    {selectedPerjalanan.waktuMuatSelesai
-                      ? ` – ${selectedPerjalanan.waktuMuatSelesai}`
-                      : ''}
+
+                {/* Baris 2: Waktu Tiba, Muat & Bongkar */}
+                <div className="pt-3 border-t t-border grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                  <div>
+                    <label htmlFor="edit-tiba-muat" className="block t-field-label mb-1.5">
+                      Waktu Tiba (Muat)
+                    </label>
+                    <input
+                      id="edit-tiba-muat"
+                      type="time"
+                      value={editWaktuTibaMuat}
+                      onChange={(e) => setEditWaktuTibaMuat(e.target.value)}
+                      className="w-full px-2.5 py-2 rounded-xl t-input font-mono-num"
+                    />
                   </div>
-                  {formatDurationBadge(
-                    selectedPerjalanan.waktuMuatMulai,
-                    selectedPerjalanan.waktuMuatSelesai,
-                  ) && (
-                    <div className="text-[11px] t-muted">
-                      Durasi:{' '}
-                      {formatDurationBadge(
-                        selectedPerjalanan.waktuMuatMulai,
-                        selectedPerjalanan.waktuMuatSelesai,
+                  <div>
+                    <div className="flex items-center justify-between gap-1 mb-1.5">
+                      <span className="t-field-label">Waktu Muat</span>
+                      {formatDurationBadge(editWaktuMuatMulai, editWaktuMuatSelesai) && (
+                        <span className="text-[10px] font-mono-num t-muted">
+                          {formatDurationBadge(editWaktuMuatMulai, editWaktuMuatSelesai)}
+                        </span>
                       )}
                     </div>
-                  )}
-                </div>
-                <div>
-                  <div className="t-field-label">Waktu Tiba (Bongkar)</div>
-                  <div className="font-mono-num font-bold t-text mt-1">
-                    {selectedPerjalanan.waktuTibaBongkar || '-'}
+                    <div className="grid grid-cols-2 gap-1.5">
+                      <input
+                        type="time"
+                        aria-label="Waktu Mulai Muat"
+                        value={editWaktuMuatMulai}
+                        onChange={(e) => setEditWaktuMuatMulai(e.target.value)}
+                        className="w-full px-2 py-2 rounded-xl t-input font-mono-num"
+                      />
+                      <input
+                        type="time"
+                        aria-label="Waktu Selesai Muat"
+                        value={editWaktuMuatSelesai}
+                        onChange={(e) => setEditWaktuMuatSelesai(e.target.value)}
+                        className="w-full px-2 py-2 rounded-xl t-input font-mono-num"
+                      />
+                    </div>
                   </div>
-                </div>
-                <div>
-                  <div className="t-field-label">Waktu Bongkar</div>
-                  <div className="font-mono-num font-bold t-text mt-1">
-                    {selectedPerjalanan.waktuBongkarMulai || '-'}
-                    {selectedPerjalanan.waktuBongkarSelesai
-                      ? ` – ${selectedPerjalanan.waktuBongkarSelesai}`
-                      : ''}
+                  <div>
+                    <label htmlFor="edit-tiba-bongkar" className="block t-field-label mb-1.5">
+                      Waktu Tiba (Bongkar)
+                    </label>
+                    <input
+                      id="edit-tiba-bongkar"
+                      type="time"
+                      value={editWaktuTibaBongkar}
+                      onChange={(e) => setEditWaktuTibaBongkar(e.target.value)}
+                      className="w-full px-2.5 py-2 rounded-xl t-input font-mono-num"
+                    />
                   </div>
-                  {formatDurationBadge(
-                    selectedPerjalanan.waktuBongkarMulai,
-                    selectedPerjalanan.waktuBongkarSelesai,
-                  ) && (
-                    <div className="text-[11px] t-muted">
-                      Durasi:{' '}
-                      {formatDurationBadge(
-                        selectedPerjalanan.waktuBongkarMulai,
-                        selectedPerjalanan.waktuBongkarSelesai,
+                  <div>
+                    <div className="flex items-center justify-between gap-1 mb-1.5">
+                      <span className="t-field-label">Waktu Bongkar</span>
+                      {formatDurationBadge(editWaktuBongkarMulai, editWaktuBongkarSelesai) && (
+                        <span className="text-[10px] font-mono-num t-muted">
+                          {formatDurationBadge(editWaktuBongkarMulai, editWaktuBongkarSelesai)}
+                        </span>
                       )}
                     </div>
-                  )}
+                    <div className="grid grid-cols-2 gap-1.5">
+                      <input
+                        type="time"
+                        aria-label="Waktu Mulai Bongkar"
+                        value={editWaktuBongkarMulai}
+                        onChange={(e) => setEditWaktuBongkarMulai(e.target.value)}
+                        className="w-full px-2 py-2 rounded-xl t-input font-mono-num"
+                      />
+                      <input
+                        type="time"
+                        aria-label="Waktu Selesai Bongkar"
+                        value={editWaktuBongkarSelesai}
+                        onChange={(e) => setEditWaktuBongkarSelesai(e.target.value)}
+                        className="w-full px-2 py-2 rounded-xl t-input font-mono-num"
+                      />
+                    </div>
+                  </div>
                 </div>
-              </div>
+
+                <div className="flex flex-wrap items-center justify-end gap-2 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditingDetailId(null);
+                      setEditDetailError('');
+                    }}
+                    className="px-3.5 py-2 rounded-xl t-btn-secondary font-semibold"
+                  >
+                    Batal
+                  </button>
+                  <button
+                    type="submit"
+                    className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl t-btn-primary font-bold"
+                  >
+                    <Save className="w-3.5 h-3.5" />
+                    <span>Simpan Perubahan</span>
+                  </button>
+                </div>
+              </form>
+            ) : (
+              <>
+                <div className="sm:col-span-2 lg:col-span-4 pt-3 border-t t-border grid grid-cols-2 sm:grid-cols-4 gap-4">
+                  <div>
+                    <div className="t-field-label">Jenis &amp; Kode Limbah</div>
+                    <div className="font-semibold t-text mt-1">
+                      {selectedPerjalanan.jenisLimbah || '-'}
+                    </div>
+                    {selectedPerjalanan.kodeLimbah && (
+                      <div className="text-[11px] font-mono-num t-muted">
+                        Kode: {selectedPerjalanan.kodeLimbah}
+                      </div>
+                    )}
+                  </div>
+                  <div>
+                    <div className="t-field-label">Kemasan / Wadah</div>
+                    <div className="font-semibold t-text mt-1">
+                      {selectedPerjalanan.kemasanLimbah || '-'}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="t-field-label">Estimasi Berat / Volume</div>
+                    <div className="font-mono-num font-semibold t-text mt-1">
+                      {selectedPerjalanan.estimasiMuatan || '-'}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="t-field-label">No. Manifest / Festronik</div>
+                    <div className="font-mono-num font-semibold t-text mt-1">
+                      {selectedPerjalanan.nomorManifest || '-'}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="sm:col-span-2 lg:col-span-4 pt-3 border-t t-border grid grid-cols-2 sm:grid-cols-4 gap-4">
+                  <div>
+                    <div className="t-field-label">Waktu Tiba (Muat)</div>
+                    <div className="font-mono-num font-bold t-text mt-1">
+                      {selectedPerjalanan.waktuTibaMuat || '-'}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="t-field-label">Waktu Muat</div>
+                    <div className="font-mono-num font-bold t-text mt-1">
+                      {selectedPerjalanan.waktuMuatMulai || '-'}
+                      {selectedPerjalanan.waktuMuatSelesai
+                        ? ` – ${selectedPerjalanan.waktuMuatSelesai}`
+                        : ''}
+                    </div>
+                    {formatDurationBadge(
+                      selectedPerjalanan.waktuMuatMulai,
+                      selectedPerjalanan.waktuMuatSelesai,
+                    ) && (
+                      <div className="text-[11px] t-muted">
+                        Durasi:{' '}
+                        {formatDurationBadge(
+                          selectedPerjalanan.waktuMuatMulai,
+                          selectedPerjalanan.waktuMuatSelesai,
+                        )}
+                      </div>
+                    )}
+                  </div>
+                  <div>
+                    <div className="t-field-label">Waktu Tiba (Bongkar)</div>
+                    <div className="font-mono-num font-bold t-text mt-1">
+                      {selectedPerjalanan.waktuTibaBongkar || '-'}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="t-field-label">Waktu Bongkar</div>
+                    <div className="font-mono-num font-bold t-text mt-1">
+                      {selectedPerjalanan.waktuBongkarMulai || '-'}
+                      {selectedPerjalanan.waktuBongkarSelesai
+                        ? ` – ${selectedPerjalanan.waktuBongkarSelesai}`
+                        : ''}
+                    </div>
+                    {formatDurationBadge(
+                      selectedPerjalanan.waktuBongkarMulai,
+                      selectedPerjalanan.waktuBongkarSelesai,
+                    ) && (
+                      <div className="text-[11px] t-muted">
+                        Durasi:{' '}
+                        {formatDurationBadge(
+                          selectedPerjalanan.waktuBongkarMulai,
+                          selectedPerjalanan.waktuBongkarSelesai,
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </>
             )}
 
             {selectedPerjalanan.catatan && (

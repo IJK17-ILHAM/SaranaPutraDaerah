@@ -1,4 +1,4 @@
-import { AlertCircle, Truck, X } from 'lucide-react';
+import { AlertCircle, BellRing, Truck, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { COMMON_JENIS_KENDARAAN, COMMON_MEREK_KENDARAAN } from '../../data/armadaSeed';
 import type { ArmadaUnit, ArmadaUnitInput, ArmadaUnitStatus } from '../../types/armada';
@@ -21,6 +21,9 @@ const EMPTY_FORM: ArmadaUnitInput = {
   nomorRangka: '',
   nomorMesin: '',
   status: 'Aktif',
+  masaBerlakuPajak: '',
+  masaBerlakuStnk: '',
+  pengingatHariSebelum: 2,
   catatan: '',
 };
 
@@ -49,6 +52,9 @@ export function UnitArmadaFormModal({
         nomorRangka: editingUnit.nomorRangka || '',
         nomorMesin: editingUnit.nomorMesin || '',
         status: editingUnit.status || 'Aktif',
+        masaBerlakuPajak: editingUnit.masaBerlakuPajak || '',
+        masaBerlakuStnk: editingUnit.masaBerlakuStnk || '',
+        pengingatHariSebelum: editingUnit.pengingatHariSebelum || 2,
         catatan: editingUnit.catatan || '',
       });
     } else {
@@ -109,6 +115,12 @@ export function UnitArmadaFormModal({
       nomorRangka: form.nomorRangka.trim().toUpperCase(),
       nomorMesin: form.nomorMesin.trim().toUpperCase(),
       status: form.status,
+      masaBerlakuPajak: (form.masaBerlakuPajak || '').trim() || undefined,
+      masaBerlakuStnk: (form.masaBerlakuStnk || '').trim() || undefined,
+      pengingatHariSebelum:
+        form.pengingatHariSebelum && Number(form.pengingatHariSebelum) >= 1
+          ? Math.min(90, Math.round(Number(form.pengingatHariSebelum)))
+          : 2,
       catatan: (form.catatan || '').trim(),
     });
   };
@@ -342,6 +354,73 @@ export function UnitArmadaFormModal({
                 placeholder="Contoh: Box tertutup B3 / GPS aktif / spesifikasi bak"
                 className="w-full px-3 py-2 rounded-xl t-input"
               />
+            </div>
+          </div>
+
+          {/* Masa Berlaku STNK, Pajak & Pengingat Kalender */}
+          <div className="p-3.5 rounded-xl t-subtle border t-border space-y-3">
+            <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider t-link">
+              <BellRing className="w-3.5 h-3.5" />
+              <span>Masa Berlaku Pajak, STNK &amp; Pengingat Kalender</span>
+            </div>
+            <p className="text-[11px] t-muted">
+              Isi tanggal jatuh tempo pajak tahunan dan/atau STNK 5 tahunan agar dapat dikirim ke
+              Google Calendar dengan pemberitahuan otomatis mulai H-
+              {form.pengingatHariSebelum || 2}.
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div>
+                <label htmlFor="armada-pajak" className="block t-field-label mb-1">
+                  Jatuh Tempo Pajak (Tahunan)
+                </label>
+                <input
+                  id="armada-pajak"
+                  type="date"
+                  value={form.masaBerlakuPajak || ''}
+                  onChange={(e) =>
+                    setForm((p) => ({ ...p, masaBerlakuPajak: e.target.value }))
+                  }
+                  className="w-full px-3 py-2 rounded-xl t-input font-mono-num"
+                />
+              </div>
+              <div>
+                <label htmlFor="armada-stnk" className="block t-field-label mb-1">
+                  Masa Berlaku STNK (5 Thn)
+                </label>
+                <input
+                  id="armada-stnk"
+                  type="date"
+                  value={form.masaBerlakuStnk || ''}
+                  onChange={(e) =>
+                    setForm((p) => ({ ...p, masaBerlakuStnk: e.target.value }))
+                  }
+                  className="w-full px-3 py-2 rounded-xl t-input font-mono-num"
+                />
+              </div>
+              <div>
+                <label htmlFor="armada-pengingat-hari" className="block t-field-label mb-1">
+                  Ingatkan Mulai (Hari Sblm)
+                </label>
+                <select
+                  id="armada-pengingat-hari"
+                  value={String(form.pengingatHariSebelum || 2)}
+                  onChange={(e) =>
+                    setForm((p) => ({
+                      ...p,
+                      pengingatHariSebelum: Number(e.target.value) || 2,
+                    }))
+                  }
+                  className="w-full px-3 py-2 rounded-xl t-input font-semibold"
+                >
+                  <option value="1">H-1 (1 hari sebelum)</option>
+                  <option value="2">H-2 (2 hari sebelum)</option>
+                  <option value="3">H-3 (3 hari sebelum)</option>
+                  <option value="5">H-5 (5 hari sebelum)</option>
+                  <option value="7">H-7 (1 minggu sebelum)</option>
+                  <option value="14">H-14 (2 minggu sebelum)</option>
+                  <option value="30">H-30 (1 bulan sebelum)</option>
+                </select>
+              </div>
             </div>
           </div>
 

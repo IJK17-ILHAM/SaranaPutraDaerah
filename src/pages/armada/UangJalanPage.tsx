@@ -3,15 +3,24 @@ import {
   ArrowLeft,
   CheckCircle2,
   Eye,
+  Loader2,
   Plus,
   Receipt,
+  RefreshCw,
+  ScanSearch,
   Search,
+  Sparkles,
   Trash2,
   Upload,
   Wallet,
 } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { ArmadaMenuIcon } from '../../components/armada/ArmadaMenuIcons';
+import {
+  prepareProofForScan,
+  scanBuktiPencairan,
+  type BuktiPencairanScanResult,
+} from '../../services/buktiPencairanScan';
 import type {
   ArmadaLokasi,
   ArmadaPelanggan,
@@ -98,6 +107,12 @@ export function UangJalanPage({
   const [cairMetode, setCairMetode] = useState<'Tunai' | 'Transfer'>('Transfer');
   const [cairBuktiUrl, setCairBuktiUrl] = useState<string | undefined>(undefined);
   const [cairBuktiNama, setCairBuktiNama] = useState<string | undefined>(undefined);
+  const [cairScanSourceUrl, setCairScanSourceUrl] = useState<string | undefined>(undefined);
+  const [isScanningBukti, setIsScanningBukti] = useState(false);
+  const [scanBuktiResult, setScanBuktiResult] = useState<BuktiPencairanScanResult | null>(null);
+  const [scanBuktiError, setScanBuktiError] = useState('');
+  const [isDragOverBukti, setIsDragOverBukti] = useState(false);
+  const scanRequestSeqRef = useRef(0);
   const [stageError, setStageError] = useState('');
 
   // Stage 3: Dipertanggungjawabkan (Sopir / Admin) state
@@ -131,13 +146,19 @@ export function UangJalanPage({
     [selectedUangJalanId, uangJalanList],
   );
 
-  const openDetail = (uj: ArmadaUangJalan) => {
+  const resetDetailFormState = (uj: ArmadaUangJalan) => {
+    scanRequestSeqRef.current += 1;
     setStageError('');
     setCairNominalText(formatCurrencyInput(String(Math.round(uj.nominalDiajukan))));
     setCairTanggal(getTodayISO());
     setCairMetode('Transfer');
     setCairBuktiUrl(undefined);
     setCairBuktiNama(undefined);
+    setCairScanSourceUrl(undefined);
+    setIsScanningBukti(false);
+    setScanBuktiResult(null);
+    setScanBuktiError('');
+    setIsDragOverBukti(false);
     if (uj.rincianPengeluaran.length > 0) {
       setExpenseRows(
         uj.rincianPengeluaran.map((item) => ({
@@ -160,7 +181,70 @@ export function UangJalanPage({
     setSelesaiTanggal(getTodayISO());
     setSelesaiMetode('Tunai');
     setSelesaiCatatan('');
+  };
+
+  useEffect(() => {
+    if (!selectedUj) return;
+    resetDetailFormState(selectedUj);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedUj?.id]);
+
+  const openDetail = (uj: ArmadaUangJalan) => {
+    resetDetailFormState(uj);
     onSelectUangJalan(uj.id);
+  };
+
+  const runScanBukti = async (scanDataUrl: string) => {
+    const seq = ++scanRequestSeqRef.current;
+    setIsScanningBukti(true);
+    setScanBuktiError('');
+    setScanBuktiResult(null);
+
+    try {
+      const detected = await scanBuktiPencairan(scanDataUrl);
+      if (seq !== scanRequestSeqRef.current) return;
+
+      setScanBuktiResult(detected);
+      if (detected.nominal !== null && detected.nominal > 0) {
+        setCairNominalText(formatCurrencyInput(String(Math.round(detected.nominal))));
+      }
+      if (detected.tanggal) {
+        setCairTanggal(detected.tanggal);
+      }
+      if (detected.metode) {
+        setCairMetode(detected.metode);
+      }
+    } catch (err) {
+      if (seq !== scanRequestSeqRef.current) return;
+      setScanBuktiError(
+        err instanceof Error
+          ? err.message
+          : 'Gagal membaca bukti pembayaran. Silakan isi nominal, tanggal, dan metode secara manual.',
+      );
+    } finally {
+      if (seq === scanRequestSeqRef.current) {
+        setIsScanningBukti(false);
+      }
+    }
+  };
+
+  const handleBuktiPencairanFile = async (file: File) => {
+    setStageError('');
+    setScanBuktiError('');
+    try {
+      const [stored, scanDataUrl] = await Promise.all([
+        readProofFileAsDataUrl(file),
+        prepareProofForScan(file),
+      ]);
+      setCairBuktiUrl(stored.dataUrl);
+      setCairBuktiNama(stored.name);
+      setCairScanSourceUrl(scanDataUrl);
+      void runScanBukti(scanDataUrl);
+    } catch (err) {
+      setScanBuktiError(
+        err instanceof Error ? err.message : 'Gagal membaca file bukti pembayaran.',
+      );
+    }
   };
 
   const stats = useMemo(() => {
@@ -435,16 +519,182 @@ export function UangJalanPage({
             <div className="border-b t-border pb-3">
               <h3 className="t-section-label">Tahap 2: Pencairan oleh Finance</h3>
               <p className="text-[11px] t-muted mt-0.5">
-                Catat nominal yang benar-benar dibayar, tanggal pencairan, dan bukti transfer/kas.
-                Sistem otomatis mencatat transaksi pengeluaran di <b>Kas &amp; Tonase</b>.
+                Unggah bukti transfer atau kwitansi tunai untuk mendeteksi <b>nominal dibayar</b>,{' '}
+                <b>tanggal pencairan</b>, dan <b>metode pembayaran</b> secara otomatis. Sistem juga
+                otomatis mencatat transaksi pengeluaran di <b>Kas &amp; Tonase</b>.
               </p>
+            </div>
+
+            {/* Proof Upload + Auto Detection Panel */}
+            <div
+              onDragOver={(e) => {
+                e.preventDefault();
+                setIsDragOverBukti(true);
+              }}
+              onDragLeave={() => setIsDragOverBukti(false)}
+              onDrop={(e) => {
+                e.preventDefault();
+                setIsDragOverBukti(false);
+                const file = e.dataTransfer.files?.[0];
+                if (file) {
+                  void handleBuktiPencairanFile(file);
+                }
+              }}
+              className={`rounded-2xl border p-4 space-y-3 transition-colors ${
+                isDragOverBukti ? 't-status-info border-dashed' : 't-subtle t-border'
+              }`}
+            >
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <span className="inline-flex items-center gap-1.5 t-field-label">
+                    <ScanSearch className="w-3.5 h-3.5" />
+                    <span>Bukti Pembayaran (Foto / Struk / PDF) — Deteksi Otomatis</span>
+                  </span>
+                  <p className="text-[11px] t-muted mt-0.5">
+                    Unggah atau tarik bukti transfer m-banking, struk ATM, atau kwitansi kas agar
+                    nominal, tanggal, dan metode langsung terisi.
+                  </p>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2">
+                  <label className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl t-btn-primary font-semibold cursor-pointer">
+                    <Upload className="w-3.5 h-3.5" />
+                    <span>{cairBuktiNama ? 'Ganti Bukti' : 'Unggah Bukti Pembayaran'}</span>
+                    <input
+                      type="file"
+                      accept="image/*,.pdf"
+                      className="hidden"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        e.target.value = '';
+                        if (!file) return;
+                        void handleBuktiPencairanFile(file);
+                      }}
+                    />
+                  </label>
+                  {cairScanSourceUrl && (
+                    <button
+                      type="button"
+                      disabled={isScanningBukti}
+                      onClick={() => void runScanBukti(cairScanSourceUrl)}
+                      className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl t-btn-secondary font-semibold disabled:opacity-60"
+                    >
+                      <RefreshCw className={`w-3.5 h-3.5 ${isScanningBukti ? 'animate-spin' : ''}`} />
+                      <span>Deteksi Ulang</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {isScanningBukti && (
+                <div className="p-3 rounded-xl t-status-info flex items-center gap-2.5 text-xs font-semibold">
+                  <Loader2 className="w-4 h-4 animate-spin shrink-0" />
+                  <span>
+                    Sedang membaca gambar bukti untuk mendeteksi nominal, tanggal, dan metode
+                    pembayaran...
+                  </span>
+                </div>
+              )}
+
+              {!isScanningBukti && scanBuktiError && (
+                <div className="p-3 rounded-xl t-status-warn flex items-start gap-2 text-xs font-medium">
+                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                  <span>{scanBuktiError}</span>
+                </div>
+              )}
+
+              {!isScanningBukti && scanBuktiResult && (
+                <div
+                  className={`p-3 rounded-xl text-xs space-y-1.5 ${
+                    scanBuktiResult.nominal !== null ||
+                    scanBuktiResult.tanggal !== null ||
+                    scanBuktiResult.metode !== null
+                      ? 't-status-ok'
+                      : 't-status-warn'
+                  }`}
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-2 font-bold">
+                    <span className="inline-flex items-center gap-1.5">
+                      <Sparkles className="w-3.5 h-3.5 shrink-0" />
+                      <span>
+                        {scanBuktiResult.nominal !== null ||
+                        scanBuktiResult.tanggal !== null ||
+                        scanBuktiResult.metode !== null
+                          ? 'Hasil Deteksi Bukti Pembayaran (Otomatis Terisi)'
+                          : 'Detail pembayaran tidak terbaca jelas pada gambar'}
+                      </span>
+                    </span>
+                    {scanBuktiResult.bankAtauSumber && (
+                      <span className="font-semibold opacity-90">
+                        Sumber: {scanBuktiResult.bankAtauSumber}
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px]">
+                    <span>
+                      Nominal:{' '}
+                      <b className="font-mono-num">
+                        {scanBuktiResult.nominal !== null
+                          ? formatRupiah(scanBuktiResult.nominal)
+                          : 'Tidak terbaca'}
+                      </b>
+                    </span>
+                    <span>
+                      Tanggal:{' '}
+                      <b className="font-mono-num">
+                        {scanBuktiResult.tanggal
+                          ? formatDateShortID(scanBuktiResult.tanggal)
+                          : 'Tidak terbaca'}
+                      </b>
+                    </span>
+                    <span>
+                      Metode: <b>{scanBuktiResult.metode || 'Tidak terbaca'}</b>
+                    </span>
+                  </div>
+                  {scanBuktiResult.catatan && (
+                    <div className="text-[11px] opacity-90">{scanBuktiResult.catatan}</div>
+                  )}
+                  <div className="text-[11px] opacity-80">
+                    Periksa kembali isian di bawah sebelum menekan konfirmasi — Anda tetap dapat
+                    mengubahnya secara manual.
+                  </div>
+                </div>
+              )}
+
+              {(cairBuktiNama || cairBuktiUrl) && (
+                <div className="flex flex-wrap items-start gap-3 pt-1">
+                  {cairBuktiUrl && cairBuktiUrl.startsWith('data:image/') && (
+                    <img
+                      src={cairBuktiUrl}
+                      alt="Pratinjau bukti pencairan"
+                      className="max-h-40 rounded-xl border t-border object-contain bg-white"
+                    />
+                  )}
+                  {cairBuktiNama && (
+                    <div className="space-y-1">
+                      <div className="t-field-label">File Terlampir</div>
+                      <div className="t-text font-semibold break-all">{cairBuktiNama}</div>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div>
-                <label htmlFor="cair-nom" className="block t-field-label mb-1">
-                  Nominal Dibayar (Rp) *
-                </label>
+                <div className="flex items-center justify-between gap-2 mb-1">
+                  <label htmlFor="cair-nom" className="block t-field-label">
+                    Nominal Dibayar (Rp) *
+                  </label>
+                  {scanBuktiResult?.nominal !== null && scanBuktiResult?.nominal !== undefined && (
+                    <span
+                      className="text-[10px] font-bold"
+                      style={{ color: 'var(--status-ok-text)' }}
+                    >
+                      Terdeteksi
+                    </span>
+                  )}
+                </div>
                 <div className="relative">
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 font-bold t-muted">
                     Rp
@@ -461,9 +711,19 @@ export function UangJalanPage({
                 </div>
               </div>
               <div>
-                <label htmlFor="cair-tgl" className="block t-field-label mb-1">
-                  Tanggal Pencairan *
-                </label>
+                <div className="flex items-center justify-between gap-2 mb-1">
+                  <label htmlFor="cair-tgl" className="block t-field-label">
+                    Tanggal Pencairan *
+                  </label>
+                  {scanBuktiResult?.tanggal && (
+                    <span
+                      className="text-[10px] font-bold"
+                      style={{ color: 'var(--status-ok-text)' }}
+                    >
+                      Terdeteksi
+                    </span>
+                  )}
+                </div>
                 <input
                   id="cair-tgl"
                   type="date"
@@ -474,9 +734,19 @@ export function UangJalanPage({
                 />
               </div>
               <div>
-                <label htmlFor="cair-metode" className="block t-field-label mb-1">
-                  Metode Pembayaran *
-                </label>
+                <div className="flex items-center justify-between gap-2 mb-1">
+                  <label htmlFor="cair-metode" className="block t-field-label">
+                    Metode Pembayaran *
+                  </label>
+                  {scanBuktiResult?.metode && (
+                    <span
+                      className="text-[10px] font-bold"
+                      style={{ color: 'var(--status-ok-text)' }}
+                    >
+                      Terdeteksi
+                    </span>
+                  )}
+                </div>
                 <select
                   id="cair-metode"
                   value={cairMetode}
@@ -489,38 +759,12 @@ export function UangJalanPage({
               </div>
             </div>
 
-            <div>
-              <span className="block t-field-label mb-1">Bukti Pembayaran (Foto / Struk)</span>
-              <div className="flex flex-wrap items-center gap-3">
-                <label className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl t-btn-secondary font-semibold cursor-pointer">
-                  <Upload className="w-3.5 h-3.5" />
-                  <span>{cairBuktiNama ? 'Ganti Bukti' : 'Unggah Bukti Pembayaran'}</span>
-                  <input
-                    type="file"
-                    accept="image/*,.pdf"
-                    className="hidden"
-                    onChange={async (e) => {
-                      const file = e.target.files?.[0];
-                      if (!file) return;
-                      const res = await readProofFileAsDataUrl(file);
-                      setCairBuktiUrl(res.dataUrl);
-                      setCairBuktiNama(res.name);
-                    }}
-                  />
-                </label>
-                {cairBuktiNama && <span className="t-text font-medium">{cairBuktiNama}</span>}
-              </div>
-              {cairBuktiUrl && cairBuktiUrl.startsWith('data:image/') && (
-                <img
-                  src={cairBuktiUrl}
-                  alt="Pratinjau bukti pencairan"
-                  className="mt-2 max-h-40 rounded-xl border t-border object-contain"
-                />
-              )}
-            </div>
-
             <div className="flex justify-end pt-3 border-t t-border">
-              <button type="submit" className="px-4 py-2.5 rounded-xl t-btn-primary">
+              <button
+                type="submit"
+                disabled={isScanningBukti}
+                className="px-4 py-2.5 rounded-xl t-btn-primary disabled:opacity-60"
+              >
                 Konfirmasi Pencairan &amp; Catat di Kas &amp; Tonase
               </button>
             </div>

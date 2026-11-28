@@ -21,7 +21,6 @@ import {
   Wallet,
 } from 'lucide-react';
 import { useMemo, useState } from 'react';
-import { ArmadaMenuIcon } from '../../components/armada/ArmadaMenuIcons';
 import {
   ARMADA_SOPIR_LIST,
   P2H_CHECKLIST_TEMPLATE,
@@ -420,52 +419,34 @@ export function TugasSayaSopirPage({
 
   return (
     <section className="max-w-2xl mx-auto space-y-4 pb-8">
-      {/* Driver Header Bar */}
-      <div className="t-card rounded-2xl p-4 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <div className="w-11 h-11 rounded-xl t-subtle border t-border flex items-center justify-center shrink-0">
-            <ArmadaMenuIcon id="armada-tugas-saya" size={30} />
-          </div>
-          <div>
-            <div className="text-[11px] font-semibold t-link">Mode HP Sopir &middot; Sistem Armada</div>
-            <h2 className="text-base sm:text-lg font-display font-bold t-text leading-snug">
-              {activeSopir}
-            </h2>
-            <p className="text-xs t-muted">
-              Hanya menampilkan tugas &amp; unit yang ditugaskan kepada akun ini.
-            </p>
-          </div>
+      {/* Allow Super Admin testing to switch active Sopir account */}
+      {!lockedSopirName && (
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <label htmlFor="sopir-switcher" className="text-[11px] font-semibold t-muted">
+            Uji Akun Sopir:
+          </label>
+          <select
+            id="sopir-switcher"
+            value={selectedSopir}
+            onChange={(e) => {
+              setSelectedSopir(e.target.value);
+              setActiveTaskId(null);
+              setP2hMode(false);
+              setBarangUnitId('');
+              setBarangFotoUrl(undefined);
+              setBarangFotoNama(undefined);
+              setBarangSuccess('');
+            }}
+            className="w-full sm:w-52 text-xs px-3 py-2 rounded-xl t-input font-semibold"
+          >
+            {availableDrivers.map((name) => (
+              <option key={name} value={name}>
+                {name}
+              </option>
+            ))}
+          </select>
         </div>
-
-        {/* Allow Super Admin testing to switch active Sopir account */}
-        {!lockedSopirName && (
-          <div className="w-full sm:w-auto">
-            <label htmlFor="sopir-switcher" className="block text-[10px] font-bold t-muted mb-1">
-              Uji Akun Sopir
-            </label>
-            <select
-              id="sopir-switcher"
-              value={selectedSopir}
-              onChange={(e) => {
-                setSelectedSopir(e.target.value);
-                setActiveTaskId(null);
-                setP2hMode(false);
-                setBarangUnitId('');
-                setBarangFotoUrl(undefined);
-                setBarangFotoNama(undefined);
-                setBarangSuccess('');
-              }}
-              className="w-full sm:w-48 text-xs px-3 py-2 rounded-xl t-input font-semibold"
-            >
-              {availableDrivers.map((name) => (
-                <option key={name} value={name}>
-                  {name}
-                </option>
-              ))}
-            </select>
-          </div>
-        )}
-      </div>
+      )}
 
       {/* 4 Mobile Tabs: Tugas Saya | Ajukan Barang | Lapor Kendala | Riwayat */}
       <div className="grid grid-cols-4 gap-1 sm:gap-1.5 p-1 sm:p-1.5 rounded-2xl t-card">

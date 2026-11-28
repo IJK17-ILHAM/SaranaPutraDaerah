@@ -1,5 +1,8 @@
 import {
+  AlertCircle,
   ArrowLeft,
+  BellRing,
+  Calendar,
   CheckCircle2,
   ClipboardCheck,
   Download,
@@ -8,6 +11,7 @@ import {
   FileSpreadsheet,
   FileText,
   FolderOpen,
+  LogOut,
   Pencil,
   Plus,
   Power,
@@ -18,11 +22,32 @@ import {
   Wrench,
   XCircle,
 } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ArmadaMenuIcon } from '../../components/armada/ArmadaMenuIcons';
+import {
+  GoogleCalendarEventsModal,
+  GoogleCalendarSyncConfirmModal,
+  GoogleSignInButton,
+} from '../../components/armada/GoogleCalendarReminderModal';
 import { MasterDataImportModal } from '../../components/armada/MasterDataImportModal';
 import { UnitArmadaFormModal } from '../../components/armada/UnitArmadaFormModal';
 import { GOOGLE_ARMADA_DRIVE_FOLDER_URL } from '../../config/constants';
+import {
+  buildUnitDueDateReminders,
+  deleteUnitDueDateCalendarEvent,
+  getCalendarAccessToken,
+  getCalendarCurrentUser,
+  getDueDateStatusMeta,
+  getUnitReminderLeadDays,
+  initCalendarAuth,
+  listUnitDueDateCalendarEvents,
+  signInGoogleCalendar,
+  signOutGoogleCalendar,
+  upsertUnitDueDateCalendarEvent,
+  type DueDateKind,
+  type SyncedCalendarEventSummary,
+  type UnitDueDateReminderItem,
+} from '../../services/googleCalendarService';
 import type {
   ArmadaLokasi,
   ArmadaMaintenanceRequest,
@@ -70,6 +95,15 @@ interface UnitArmadaPageProps {
       dataUrl: string;
     },
   ) => Promise<void> | void;
+  onUpdateUnitCalendarLinks?: (
+    updates: Array<{
+      unitId: string;
+      kind: DueDateKind;
+      eventId?: string;
+      eventLink?: string;
+    }>,
+  ) => void;
+  onNotify?: (message: string) => void;
   onExportWorkbook?: () => void;
   onImportMasterData?: (
     file: File,
@@ -93,6 +127,8 @@ export function UnitArmadaPage({
   onOpenP2H,
   onOpenMaintenance,
   onUploadUnitBerkas,
+  onUpdateUnitCalendarLinks,
+  onNotify,
   onExportWorkbook,
   onImportMasterData,
 }: UnitArmadaPageProps) {
@@ -107,6 +143,210 @@ export function UnitArmadaPage({
   const [berkasBerlaku, setBerkasBerlaku] = useState('');
   const [berkasCatatan, setBerkasCatatan] = useState('');
   const [uploadingBerkas, setUploadingBerkas] = useState(false);
+
+  // Google Calendar OAuth & Reminder Sync state (in-memory token only via googleCalendarService)
+  const [calendarConnected, setCalendarConnected] = useState<boolean>(() =>
+    Boolean(getCalendarAccessToken()),
+  );
+  const [googleEmail, setGoogleEmail] = useState<string | null>(
+    () => getCalendarCurrentUser()?.email || null,
+  );
+  const [calendarAuthLoading, setCalendarAuthLoading] = useState(false);
+  const [calendarError, setCalendarError] = useState('');
+
+  const [syncConfirmItems, setSyncConfirmItems] = useState<UnitDueDateReminderItem[]>([]);
+  const [syncModalOpen, setSyncModalOpen] = useState(false);
+  const [syncSubmitting, setSyncSubmitting] = useState(false);
+  const [syncModalError, setSyncModalError] = useState('');
+
+  const [eventsModalOpen, setEventsModalOpen] = useState(false);
+  const [calendarEvents, setCalendarEvents] = useState<SyncedCalendarEventSummary[]>([]);
+  const [eventsLoading, setEventsLoading] = useState(false);
+  const [eventsError, setEventsError] = useState('');
+  const [pendingDeleteEvent, setPendingDeleteEvent] = useState<SyncedCalendarEventSummary | null>(
+    null,
+  );
+  const [deletingEventId, setDeletingEventId] = useState<string | null>(null);
+
+  useEffect(() => {
+    return initCalendarAuth(
+      (user) => {
+        setCalendarConnected(true);
+        setGoogleEmail(user.email || user.displayName || null);
+      },
+      () => {
+        setCalendarConnected(false);
+        setGoogleEmail(null);
+      },
+    );
+  }, []);
+
+  const allDueDateReminders = useMemo(() => buildUnitDueDateReminders(units), [units]);
+
+  const dueDateSummary = useMemo(() => {
+    const urgent = allDueDateReminders.filter((r) => r.daysRemaining <= r.daysBefore).length;
+    const synced = allDueDateReminders.filter((r) => Boolean(r.existingEventId)).length;
+    return {
+      total: allDueDateReminders.length,
+      urgent,
+      synced,
+    };
+  }, [allDueDateReminders]);
+
+  const handleGoogleCalendarSignIn = async () => {
+    setCalendarAuthLoading(true);
+    setCalendarError('');
+    try {
+      const { user } = await signInGoogleCalendar();
+      setCalendarConnected(true);
+      setGoogleEmail(user.email || user.displayName || null);
+      onNotify?.(
+        `Google Calendar terhubung (${user.email || user.displayName || 'Akun Google'}).`,
+      );
+    } catch (err) {
+      setCalendarError(
+        err instanceof Error
+          ? err.message
+          : 'Gagal menghubungkan Google Calendar. Silakan coba lagi.',
+      );
+    } finally {
+      setCalendarAuthLoading(false);
+    }
+  };
+
+  const handleGoogleCalendarSignOut = async () => {
+    await signOutGoogleCalendar();
+    setCalendarConnected(false);
+    setGoogleEmail(null);
+    setCalendarEvents([]);
+    onNotify?.('Koneksi Google Calendar diputuskan.');
+  };
+
+  const openSyncConfirmation = (items: UnitDueDateReminderItem[]) => {
+    setCalendarError('');
+    if (items.length === 0) {
+      setCalendarError(
+        'Belum ada tanggal masa berlaku Pajak atau STNK yang diisi. Klik Edit pada unit untuk mengisi tanggal jatuh tempo.',
+      );
+      return;
+    }
+    if (!getCalendarAccessToken()) {
+      setCalendarConnected(false);
+      setCalendarError(
+        'Silakan masuk menggunakan tombol Sign in with Google terlebih dahulu agar pengingat dapat dikirim ke Google Calendar.',
+      );
+      return;
+    }
+    setSyncModalError('');
+    setSyncConfirmItems(items);
+    setSyncModalOpen(true);
+  };
+
+  const handleConfirmSyncToCalendar = async () => {
+    const token = getCalendarAccessToken();
+    if (!token) {
+      setCalendarConnected(false);
+      setSyncModalError('Sesi Google Calendar berakhir. Silakan Sign in with Google kembali.');
+      return;
+    }
+    setSyncSubmitting(true);
+    setSyncModalError('');
+    try {
+      const updates: Array<{
+        unitId: string;
+        kind: DueDateKind;
+        eventId?: string;
+        eventLink?: string;
+      }> = [];
+      for (const item of syncConfirmItems) {
+        const res = await upsertUnitDueDateCalendarEvent(token, item);
+        updates.push({
+          unitId: item.unitId,
+          kind: item.kind,
+          eventId: res.eventId,
+          eventLink: res.htmlLink,
+        });
+      }
+      onUpdateUnitCalendarLinks?.(updates);
+      setSyncModalOpen(false);
+      setSyncConfirmItems([]);
+      onNotify?.(
+        `${updates.length} pengingat jatuh tempo Pajak/STNK berhasil dikirim ke Google Calendar (notifikasi otomatis aktif).`,
+      );
+    } catch (err) {
+      const msg =
+        err instanceof Error ? err.message : 'Gagal mengirim pengingat ke Google Calendar.';
+      setSyncModalError(msg);
+      if (!getCalendarAccessToken()) {
+        setCalendarConnected(false);
+      }
+    } finally {
+      setSyncSubmitting(false);
+    }
+  };
+
+  const loadGoogleCalendarEvents = async () => {
+    const token = getCalendarAccessToken();
+    if (!token) {
+      setCalendarConnected(false);
+      setEventsError('Silakan Sign in with Google terlebih dahulu.');
+      return;
+    }
+    setEventsLoading(true);
+    setEventsError('');
+    try {
+      const list = await listUnitDueDateCalendarEvents(token);
+      setCalendarEvents(list);
+    } catch (err) {
+      setEventsError(
+        err instanceof Error ? err.message : 'Gagal memuat jadwal dari Google Calendar.',
+      );
+      if (!getCalendarAccessToken()) {
+        setCalendarConnected(false);
+      }
+    } finally {
+      setEventsLoading(false);
+    }
+  };
+
+  const openEventsModal = () => {
+    setPendingDeleteEvent(null);
+    setEventsModalOpen(true);
+    void loadGoogleCalendarEvents();
+  };
+
+  const handleConfirmDeleteCalendarEvent = async (ev: SyncedCalendarEventSummary) => {
+    const token = getCalendarAccessToken();
+    if (!token) {
+      setCalendarConnected(false);
+      setEventsError('Sesi Google berakhir. Silakan Sign in with Google kembali.');
+      return;
+    }
+    setDeletingEventId(ev.id);
+    setEventsError('');
+    try {
+      await deleteUnitDueDateCalendarEvent(token, ev.id);
+      setCalendarEvents((prev) => prev.filter((item) => item.id !== ev.id));
+      if (ev.unitId && ev.kind) {
+        onUpdateUnitCalendarLinks?.([
+          {
+            unitId: ev.unitId,
+            kind: ev.kind,
+            eventId: undefined,
+            eventLink: undefined,
+          },
+        ]);
+      }
+      setPendingDeleteEvent(null);
+      onNotify?.(`Pengingat "${ev.summary}" dihapus dari Google Calendar.`);
+    } catch (err) {
+      setEventsError(
+        err instanceof Error ? err.message : 'Gagal menghapus acara dari Google Calendar.',
+      );
+    } finally {
+      setDeletingEventId(null);
+    }
+  };
 
   const selectedUnit = useMemo(
     () => (selectedUnitId ? units.find((u) => u.id === selectedUnitId) || null : null),
@@ -358,6 +598,141 @@ export function UnitArmadaPage({
               </div>
             </div>
           </div>
+
+          {/* Masa Berlaku Pajak, STNK & Pengingat Google Calendar */}
+          {(() => {
+            const leadDays = getUnitReminderLeadDays(selectedUnit);
+            const unitReminders = buildUnitDueDateReminders([selectedUnit]);
+            const pajakMeta = getDueDateStatusMeta(selectedUnit.masaBerlakuPajak, leadDays);
+            const effectiveStnk =
+              selectedUnit.masaBerlakuStnk ||
+              (selectedUnit.berkasList || []).find((b) => b.jenis === 'STNK' && b.berlakuSampai)
+                ?.berlakuSampai;
+            const stnkMeta = getDueDateStatusMeta(effectiveStnk, leadDays);
+
+            const badgeClass = (level: ReturnType<typeof getDueDateStatusMeta>['level']) => {
+              if (level === 'overdue') return 't-status-bad';
+              if (level === 'urgent') return 't-status-warn';
+              if (level === 'soon') return 't-status-info';
+              if (level === 'ok') return 't-status-ok';
+              return 't-subtle t-muted';
+            };
+
+            return (
+              <div className="pt-3 border-t t-border space-y-3 text-xs">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="inline-flex items-center gap-1.5 font-bold t-text">
+                    <BellRing className="w-4 h-4 t-link" />
+                    <span>Masa Berlaku Pajak, STNK &amp; Pengingat Google Calendar</span>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    {!calendarConnected ? (
+                      <GoogleSignInButton
+                        onClick={() => void handleGoogleCalendarSignIn()}
+                        loading={calendarAuthLoading}
+                      />
+                    ) : (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => openSyncConfirmation(unitReminders)}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl t-btn-primary text-xs font-semibold"
+                        >
+                          <Calendar className="w-3.5 h-3.5" />
+                          <span>
+                            {unitReminders.some((r) => r.existingEventId)
+                              ? 'Perbarui Pengingat Kalender'
+                              : 'Kirim ke Google Calendar'}
+                          </span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={openEventsModal}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl t-btn-secondary text-xs font-semibold"
+                        >
+                          <span>Lihat Kalender</span>
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </div>
+
+                {calendarError && (
+                  <div className="p-2.5 rounded-xl t-status-warn font-medium flex items-center gap-2">
+                    <AlertCircle className="w-4 h-4 shrink-0" />
+                    <span>{calendarError}</span>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div className="p-3 rounded-xl t-subtle border t-border space-y-1">
+                    <div className="t-field-label">Pajak Tahunan</div>
+                    <div className="font-mono-num font-bold t-text">
+                      {selectedUnit.masaBerlakuPajak
+                        ? formatDateShortID(selectedUnit.masaBerlakuPajak)
+                        : 'Belum diatur'}
+                    </div>
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <span
+                        className={`inline-block px-2 py-0.5 rounded-md text-[10px] font-bold ${badgeClass(
+                          pajakMeta.level,
+                        )}`}
+                      >
+                        {pajakMeta.label}
+                      </span>
+                      {selectedUnit.calendarEventLinkPajak && (
+                        <a
+                          href={selectedUnit.calendarEventLinkPajak}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-0.5 text-[10px] font-bold t-link hover:underline"
+                        >
+                          <ExternalLink className="w-3 h-3" />
+                          <span>Buka Kalender</span>
+                        </a>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="p-3 rounded-xl t-subtle border t-border space-y-1">
+                    <div className="t-field-label">Masa Berlaku STNK (5 Thn)</div>
+                    <div className="font-mono-num font-bold t-text">
+                      {effectiveStnk ? formatDateShortID(effectiveStnk) : 'Belum diatur'}
+                    </div>
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <span
+                        className={`inline-block px-2 py-0.5 rounded-md text-[10px] font-bold ${badgeClass(
+                          stnkMeta.level,
+                        )}`}
+                      >
+                        {stnkMeta.label}
+                      </span>
+                      {selectedUnit.calendarEventLinkStnk && (
+                        <a
+                          href={selectedUnit.calendarEventLinkStnk}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-0.5 text-[10px] font-bold t-link hover:underline"
+                        >
+                          <ExternalLink className="w-3 h-3" />
+                          <span>Buka Kalender</span>
+                        </a>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="p-3 rounded-xl t-subtle border t-border space-y-1">
+                    <div className="t-field-label">Pemberitahuan Otomatis</div>
+                    <div className="font-bold t-text">Mulai H-{leadDays} sebelum jatuh tempo</div>
+                    <div className="text-[11px] t-muted">
+                      Notifikasi pop-up &amp; email Google Calendar (H-{leadDays}, H-1 &amp; pagi
+                      hari-H).
+                    </div>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
         </div>
 
         {/* Connected Module Hub Tabs */}
@@ -708,6 +1083,33 @@ export function UnitArmadaPage({
           }}
           onSave={handleSave}
         />
+
+        <GoogleCalendarSyncConfirmModal
+          open={syncModalOpen}
+          items={syncConfirmItems}
+          googleEmail={googleEmail}
+          submitting={syncSubmitting}
+          errorMsg={syncModalError}
+          onCancel={() => setSyncModalOpen(false)}
+          onConfirm={() => void handleConfirmSyncToCalendar()}
+        />
+
+        <GoogleCalendarEventsModal
+          open={eventsModalOpen}
+          googleEmail={googleEmail}
+          events={calendarEvents}
+          loading={eventsLoading}
+          errorMsg={eventsError}
+          deletingId={deletingEventId}
+          pendingDeleteEvent={pendingDeleteEvent}
+          onRequestDelete={setPendingDeleteEvent}
+          onConfirmDelete={(ev) => void handleConfirmDeleteCalendarEvent(ev)}
+          onRefresh={() => void loadGoogleCalendarEvents()}
+          onClose={() => {
+            setPendingDeleteEvent(null);
+            setEventsModalOpen(false);
+          }}
+        />
       </section>
     );
   }
@@ -798,6 +1200,99 @@ export function UnitArmadaPage({
         </div>
       </div>
 
+      {/* Google Calendar STNK & Pajak Reminder Banner */}
+      <div className="t-card rounded-2xl p-4 space-y-3 text-xs">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-start gap-3 min-w-0">
+            <div
+              className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
+              style={{
+                backgroundColor:
+                  dueDateSummary.urgent > 0
+                    ? 'var(--status-warn-bg)'
+                    : 'var(--status-info-bg)',
+                color:
+                  dueDateSummary.urgent > 0
+                    ? 'var(--status-warn-text)'
+                    : 'var(--status-info-text)',
+              }}
+            >
+              <BellRing className="w-5 h-5" />
+            </div>
+            <div className="min-w-0">
+              <div className="font-bold t-text flex flex-wrap items-center gap-2">
+                <span>Pengingat Otomatis Pajak &amp; STNK di Google Calendar</span>
+                {calendarConnected && googleEmail && (
+                  <span className="px-2 py-0.5 rounded-md t-status-ok text-[10px] font-bold">
+                    Terhubung: {googleEmail}
+                  </span>
+                )}
+              </div>
+              <p className="text-[11px] t-muted mt-0.5">
+                {dueDateSummary.total > 0 ? (
+                  <>
+                    <b>{dueDateSummary.total} jadwal</b> Pajak/STNK tercatat (
+                    <b>{dueDateSummary.synced}</b> sudah dikirim ke Google Calendar
+                    {dueDateSummary.urgent > 0 ? (
+                      <>
+                        , <b style={{ color: 'var(--status-bad-text)' }}>{dueDateSummary.urgent} mendekati / lewat jatuh tempo</b>
+                      </>
+                    ) : null}
+                    ). Google Calendar akan memberi notifikasi pop-up &amp; email otomatis mulai
+                    H-2 sebelum jatuh tempo.
+                  </>
+                ) : (
+                  'Isi tanggal jatuh tempo Pajak atau STNK pada tombol Edit unit agar dapat dikirim ke Google Calendar dengan pemberitahuan otomatis mulai H-2.'
+                )}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
+            {!calendarConnected ? (
+              <GoogleSignInButton
+                onClick={() => void handleGoogleCalendarSignIn()}
+                loading={calendarAuthLoading}
+              />
+            ) : (
+              <>
+                <button
+                  type="button"
+                  onClick={() => openSyncConfirmation(allDueDateReminders)}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl t-btn-primary text-xs font-semibold whitespace-nowrap"
+                >
+                  <Calendar className="w-3.5 h-3.5" />
+                  <span>Sinkronkan Semua ke Google Calendar ({dueDateSummary.total})</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={openEventsModal}
+                  className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl t-btn-secondary text-xs font-semibold whitespace-nowrap"
+                >
+                  <Eye className="w-3.5 h-3.5" />
+                  <span>Lihat Jadwal Kalender</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleGoogleCalendarSignOut()}
+                  title="Putuskan koneksi Google Calendar"
+                  className="inline-flex items-center gap-1 px-2.5 py-2 rounded-xl t-btn-secondary text-xs font-semibold"
+                >
+                  <LogOut className="w-3.5 h-3.5" />
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+
+        {calendarError && (
+          <div className="p-2.5 rounded-xl t-status-warn font-medium flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 shrink-0" />
+            <span>{calendarError}</span>
+          </div>
+        )}
+      </div>
+
       {/* Search & Filter Bar */}
       <div className="t-card rounded-2xl p-4 grid grid-cols-1 sm:grid-cols-12 gap-3">
         <div className="sm:col-span-6">
@@ -863,6 +1358,7 @@ export function UnitArmadaPage({
                 <th className="py-3.5 px-4 t-th-label">Nomor Polisi</th>
                 <th className="py-3.5 px-4 t-th-label">Jenis Kendaraan</th>
                 <th className="py-3.5 px-4 t-th-label">Merek &amp; Model</th>
+                <th className="py-3.5 px-4 t-th-label">Pajak &amp; STNK</th>
                 <th className="py-3.5 px-4 t-th-label text-center">Status</th>
                 <th className="py-3.5 px-5 t-th-label text-right">Aksi</th>
               </tr>
@@ -870,7 +1366,7 @@ export function UnitArmadaPage({
             <tbody className="divide-y t-border">
               {filteredUnits.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="p-8 text-center t-muted">
+                  <td colSpan={7} className="p-8 text-center t-muted">
                     Tidak ada unit armada yang cocok dengan pencarian Anda.
                   </td>
                 </tr>
@@ -878,6 +1374,19 @@ export function UnitArmadaPage({
                 filteredUnits.map((unit) => {
                   const merekModel = [unit.merek, unit.model].filter(Boolean).join(' ');
                   const isAktif = unit.status === 'Aktif';
+                  const leadDays = getUnitReminderLeadDays(unit);
+                  const effectiveStnk =
+                    unit.masaBerlakuStnk ||
+                    (unit.berkasList || []).find((b) => b.jenis === 'STNK' && b.berlakuSampai)
+                      ?.berlakuSampai;
+                  const pajakMeta = getDueDateStatusMeta(unit.masaBerlakuPajak, leadDays);
+                  const stnkMeta = getDueDateStatusMeta(effectiveStnk, leadDays);
+                  const statusTone = (level: ReturnType<typeof getDueDateStatusMeta>['level']) => {
+                    if (level === 'overdue') return 'var(--status-bad-text)';
+                    if (level === 'urgent') return 'var(--status-warn-text)';
+                    if (level === 'soon') return 'var(--status-info-text)';
+                    return 'var(--status-ok-text)';
+                  };
                   return (
                     <tr
                       key={unit.id}
@@ -903,6 +1412,54 @@ export function UnitArmadaPage({
                         {unit.tahun && (
                           <div className="text-[10px] t-muted font-mono-num">
                             Tahun {unit.tahun}
+                          </div>
+                        )}
+                      </td>
+                      <td className="py-3.5 px-4 whitespace-nowrap">
+                        {!unit.masaBerlakuPajak && !effectiveStnk ? (
+                          <span className="t-muted text-[11px]">Belum diatur</span>
+                        ) : (
+                          <div className="space-y-0.5 text-[11px]">
+                            {unit.masaBerlakuPajak && (
+                              <div className="flex items-center gap-1.5">
+                                <span className="t-muted">Pajak:</span>
+                                <span className="font-mono-num font-semibold t-text">
+                                  {formatDateShortID(unit.masaBerlakuPajak)}
+                                </span>
+                                <span
+                                  className="font-bold text-[10px]"
+                                  style={{ color: statusTone(pajakMeta.level) }}
+                                >
+                                  ({pajakMeta.label})
+                                </span>
+                                {unit.calendarEventIdPajak && (
+                                  <Calendar
+                                    className="w-3 h-3 shrink-0"
+                                    style={{ color: 'var(--status-ok-text)' }}
+                                  />
+                                )}
+                              </div>
+                            )}
+                            {effectiveStnk && (
+                              <div className="flex items-center gap-1.5">
+                                <span className="t-muted">STNK:</span>
+                                <span className="font-mono-num font-semibold t-text">
+                                  {formatDateShortID(effectiveStnk)}
+                                </span>
+                                <span
+                                  className="font-bold text-[10px]"
+                                  style={{ color: statusTone(stnkMeta.level) }}
+                                >
+                                  ({stnkMeta.label})
+                                </span>
+                                {unit.calendarEventIdStnk && (
+                                  <Calendar
+                                    className="w-3 h-3 shrink-0"
+                                    style={{ color: 'var(--status-ok-text)' }}
+                                  />
+                                )}
+                              </div>
+                            )}
                           </div>
                         )}
                       </td>
@@ -969,6 +1526,33 @@ export function UnitArmadaPage({
           onImportFile={onImportMasterData}
         />
       )}
+
+      <GoogleCalendarSyncConfirmModal
+        open={syncModalOpen}
+        items={syncConfirmItems}
+        googleEmail={googleEmail}
+        submitting={syncSubmitting}
+        errorMsg={syncModalError}
+        onCancel={() => setSyncModalOpen(false)}
+        onConfirm={() => void handleConfirmSyncToCalendar()}
+      />
+
+      <GoogleCalendarEventsModal
+        open={eventsModalOpen}
+        googleEmail={googleEmail}
+        events={calendarEvents}
+        loading={eventsLoading}
+        errorMsg={eventsError}
+        deletingId={deletingEventId}
+        pendingDeleteEvent={pendingDeleteEvent}
+        onRequestDelete={setPendingDeleteEvent}
+        onConfirmDelete={(ev) => void handleConfirmDeleteCalendarEvent(ev)}
+        onRefresh={() => void loadGoogleCalendarEvents()}
+        onClose={() => {
+          setPendingDeleteEvent(null);
+          setEventsModalOpen(false);
+        }}
+      />
     </section>
   );
 }
