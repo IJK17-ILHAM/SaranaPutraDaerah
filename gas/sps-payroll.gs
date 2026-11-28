@@ -230,6 +230,61 @@ function getAccountSheet_() {
   return getOrCreateSheetByName_(ACCOUNT_SHEET_NAME, ACCOUNT_HEADERS);
 }
 
+var NUMERIC_PAYROLL_FIELDS = {
+  hariKerja: true,
+  hadir: true,
+  spsHadir: true,
+  spsAlpha: true,
+  upahPerHari: true,
+  trip: true,
+  upahPerTrip: true,
+  lemburHari: true,
+  upahLemburHari: true,
+  nominalLemburHari: true,
+  jamLembur: true,
+  tambahanJamLembur: true,
+  upahPerJam: true,
+  nominalLemburJam: true,
+  inap: true,
+  upahPerInap: true,
+  nominalLemburInap: true,
+  lemburVolume: true,
+  lemburTarif: true,
+  lemburNominal: true,
+  gapok: true,
+  tunjangan: true,
+  potAbsen: true,
+  pph: true,
+  gajiKotor: true,
+  kasbon: true,
+  saldoKasbonAwal: true,
+  sisaKasbonSetelah: true,
+  bpjs: true,
+  totalPotongan: true,
+  thp: true,
+};
+
+function normalizeCellValue_(header, raw) {
+  if (header === 'savedAt' && !raw) return new Date().toISOString();
+  if (raw === undefined || raw === null || raw === '') return '';
+  if (NUMERIC_PAYROLL_FIELDS[header]) {
+    var num = Number(raw);
+    return isNaN(num) ? raw : num;
+  }
+  return raw;
+}
+
+function formatTextColumns_(sheet, headers) {
+  var textCols = ['nik', 'noRekening'];
+  var maxRows = Math.max(sheet.getMaxRows(), 2);
+  for (var i = 0; i < textCols.length; i++) {
+    var colIdx = headers.indexOf(textCols[i]);
+    if (colIdx >= 0) {
+      sheet.getRange(2, colIdx + 1, maxRows - 1, 1).setNumberFormat('@');
+    }
+  }
+}
+
 function ensurePayrollHeaders_(sheet, params) {
   var lastCol = sheet.getLastColumn();
   var headers =
@@ -265,6 +320,8 @@ function ensurePayrollHeaders_(sheet, params) {
 
   if (changed) {
     sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+    sheet.getRange(1, 1, 1, headers.length).setFontWeight('bold');
+    formatTextColumns_(sheet, headers);
   }
   return headers;
 }
@@ -326,8 +383,7 @@ function handleSavePayroll_(params) {
   var sheet = getPayrollSheet_(params);
   var headers = ensurePayrollHeaders_(sheet, params);
   var rowValues = headers.map(function (h) {
-    if (h === 'savedAt' && !params[h]) return new Date().toISOString();
-    return params[h] !== undefined && params[h] !== null ? params[h] : '';
+    return normalizeCellValue_(h, params[h]);
   });
   sheet.appendRow(rowValues);
   return { status: 'success', mode: 'inserted', sheet: sheet.getName() };
@@ -373,8 +429,7 @@ function tryUpdateRowInSheet_(sheet, params) {
 
     if (matchedById || matchedByNikPeriode || matchedByNamaPeriode) {
       var rowValues = headers.map(function (h) {
-        if (h === 'savedAt' && !params[h]) return new Date().toISOString();
-        return params[h] !== undefined && params[h] !== null ? params[h] : '';
+        return normalizeCellValue_(h, params[h]);
       });
       sheet.getRange(i + 2, 1, 1, headers.length).setValues([rowValues]);
       return { status: 'success', mode: 'updated', sheet: sheet.getName(), row: i + 2 };
