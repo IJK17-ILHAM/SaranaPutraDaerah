@@ -12,7 +12,6 @@ import {
   X,
 } from 'lucide-react';
 import { useMemo, useState } from 'react';
-import { ArmadaMenuIcon } from '../../components/armada/ArmadaMenuIcons';
 import { ARMADA_SOPIR_LIST, generateNextArmadaCode } from '../../data/armadaSeed';
 import type {
   ArmadaPelanggan,
@@ -61,7 +60,35 @@ interface SewaUnitPageProps {
     catatanKerusakan?: string;
     buktiKembaliDataUrl?: string;
     buktiKembaliNama?: string;
+    waktuTibaMuat?: string;
+    waktuMuatMulai?: string;
+    waktuMuatSelesai?: string;
+    waktuTibaBongkar?: string;
+    waktuBongkarMulai?: string;
+    waktuBongkarSelesai?: string;
   }) => void;
+}
+
+function parseHHMMToMinutes(timeStr?: string): number | null {
+  if (!timeStr) return null;
+  const parts = timeStr.trim().split(':');
+  if (parts.length < 2) return null;
+  const h = Number(parts[0]);
+  const m = Number(parts[1]);
+  if (!Number.isFinite(h) || !Number.isFinite(m)) return null;
+  return h * 60 + m;
+}
+
+function formatDurationBadge(start?: string, end?: string): string | null {
+  const s = parseHHMMToMinutes(start);
+  const e = parseHHMMToMinutes(end);
+  if (s === null || e === null || e < s) return null;
+  const diff = e - s;
+  const hrs = Math.floor(diff / 60);
+  const mins = diff % 60;
+  if (hrs > 0 && mins > 0) return `${hrs}j ${mins}m`;
+  if (hrs > 0) return `${hrs} jam`;
+  return `${mins} mnt`;
 }
 
 export function SewaUnitPage({
@@ -84,6 +111,12 @@ export function SewaUnitPage({
   const [jamMulai, setJamMulai] = useState('10:00');
   const [tanggalSelesai, setTanggalSelesai] = useState(getTodayISO());
   const [jamSelesai, setJamSelesai] = useState('15:00');
+  const [waktuTibaMuat, setWaktuTibaMuat] = useState('10:00');
+  const [waktuMuatMulai, setWaktuMuatMulai] = useState('10:15');
+  const [waktuMuatSelesai, setWaktuMuatSelesai] = useState('11:00');
+  const [waktuTibaBongkar, setWaktuTibaBongkar] = useState('12:30');
+  const [waktuBongkarMulai, setWaktuBongkarMulai] = useState('12:45');
+  const [waktuBongkarSelesai, setWaktuBongkarSelesai] = useState('13:30');
   const [modeSewa, setModeSewa] = useState<SewaMode>('Dengan Sopir');
   const [namaSopir, setNamaSopir] = useState('');
   const [tarifText, setTarifText] = useState('');
@@ -110,6 +143,12 @@ export function SewaUnitPage({
   const [retKerusakan, setRetKerusakan] = useState('');
   const [retBuktiUrl, setRetBuktiUrl] = useState<string | undefined>(undefined);
   const [retBuktiNama, setRetBuktiNama] = useState<string | undefined>(undefined);
+  const [retWaktuTibaMuat, setRetWaktuTibaMuat] = useState('');
+  const [retWaktuMuatMulai, setRetWaktuMuatMulai] = useState('');
+  const [retWaktuMuatSelesai, setRetWaktuMuatSelesai] = useState('');
+  const [retWaktuTibaBongkar, setRetWaktuTibaBongkar] = useState('');
+  const [retWaktuBongkarMulai, setRetWaktuBongkarMulai] = useState('');
+  const [retWaktuBongkarSelesai, setRetWaktuBongkarSelesai] = useState('');
   const [retError, setRetError] = useState('');
 
   const unitById = useMemo(() => new Map(units.map((u) => [u.id, u])), [units]);
@@ -153,6 +192,12 @@ export function SewaUnitPage({
     setJamMulai('10:00');
     setTanggalSelesai(getTodayISO());
     setJamSelesai('14:00');
+    setWaktuTibaMuat('10:00');
+    setWaktuMuatMulai('10:15');
+    setWaktuMuatSelesai('11:00');
+    setWaktuTibaBongkar('12:30');
+    setWaktuBongkarMulai('12:45');
+    setWaktuBongkarSelesai('13:30');
     setModeSewa('Dengan Sopir');
     setNamaSopir(arm001?.supirUtama && arm001.supirUtama !== '-' ? arm001.supirUtama : ARMADA_SOPIR_LIST[0]);
     setTarifText('1.500.000');
@@ -178,6 +223,18 @@ export function SewaUnitPage({
     const endMs = toLocalDateTimeMs(tanggalSelesai, jamSelesai);
     if (isNaN(startMs) || isNaN(endMs) || endMs <= startMs) {
       setBookingError('Waktu selesai sewa harus lebih besar dari waktu mulai.');
+      return;
+    }
+    const muatStartMin = parseHHMMToMinutes(waktuMuatMulai);
+    const muatEndMin = parseHHMMToMinutes(waktuMuatSelesai);
+    if (muatStartMin !== null && muatEndMin !== null && muatEndMin < muatStartMin) {
+      setBookingError('Waktu selesai muat tidak boleh lebih awal dari waktu mulai muat.');
+      return;
+    }
+    const bongkarStartMin = parseHHMMToMinutes(waktuBongkarMulai);
+    const bongkarEndMin = parseHHMMToMinutes(waktuBongkarSelesai);
+    if (bongkarStartMin !== null && bongkarEndMin !== null && bongkarEndMin < bongkarStartMin) {
+      setBookingError('Waktu selesai bongkar tidak boleh lebih awal dari waktu mulai bongkar.');
       return;
     }
 
@@ -210,6 +267,12 @@ export function SewaUnitPage({
       jamMulai,
       tanggalSelesai,
       jamSelesai,
+      waktuTibaMuat: waktuTibaMuat || undefined,
+      waktuMuatMulai: waktuMuatMulai || undefined,
+      waktuMuatSelesai: waktuMuatSelesai || undefined,
+      waktuTibaBongkar: waktuTibaBongkar || undefined,
+      waktuBongkarMulai: waktuBongkarMulai || undefined,
+      waktuBongkarSelesai: waktuBongkarSelesai || undefined,
       modeSewa,
       namaSopir: modeSewa === 'Dengan Sopir' ? namaSopir.trim() || '-' : undefined,
       tarifDisepakati: tarif,
@@ -266,6 +329,12 @@ export function SewaUnitPage({
     setRetKerusakan('');
     setRetBuktiUrl(undefined);
     setRetBuktiNama(undefined);
+    setRetWaktuTibaMuat(sewa.waktuTibaMuat || '');
+    setRetWaktuMuatMulai(sewa.waktuMuatMulai || '');
+    setRetWaktuMuatSelesai(sewa.waktuMuatSelesai || '');
+    setRetWaktuTibaBongkar(sewa.waktuTibaBongkar || '');
+    setRetWaktuBongkarMulai(sewa.waktuBongkarMulai || '');
+    setRetWaktuBongkarSelesai(sewa.waktuBongkarSelesai || '');
     setReturnTarget(sewa);
   };
 
@@ -293,6 +362,12 @@ export function SewaUnitPage({
       catatanKerusakan: retKerusakan.trim(),
       buktiKembaliDataUrl: retBuktiUrl,
       buktiKembaliNama: retBuktiNama,
+      waktuTibaMuat: retWaktuTibaMuat || undefined,
+      waktuMuatMulai: retWaktuMuatMulai || undefined,
+      waktuMuatSelesai: retWaktuMuatSelesai || undefined,
+      waktuTibaBongkar: retWaktuTibaBongkar || undefined,
+      waktuBongkarMulai: retWaktuBongkarMulai || undefined,
+      waktuBongkarSelesai: retWaktuBongkarSelesai || undefined,
     });
     setReturnTarget(null);
   };
@@ -305,23 +380,7 @@ export function SewaUnitPage({
 
   return (
     <section className="space-y-5">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div className="flex items-start gap-3">
-          <div className="w-11 h-11 rounded-xl t-subtle border t-border flex items-center justify-center shrink-0">
-            <ArmadaMenuIcon id="armada-sewa-unit" size={30} />
-          </div>
-          <div>
-            <h2 className="text-base sm:text-lg font-display font-bold t-text leading-snug">
-              Sewa Unit Armada
-            </h2>
-            <p className="text-xs t-muted mt-0.5 max-w-2xl">
-              Kelola tiga tahap penyewaan: <b>Buat Pemesanan (Dipesan)</b>,{' '}
-              <b>Serahkan Unit (Sedang Disewa)</b>, dan <b>Terima Kembali Unit (Dikembalikan)</b>{' '}
-              dengan pengecekan bentrok jadwal otomatis terhadap Perjalanan &amp; Sewa aktif.
-            </p>
-          </div>
-        </div>
-
+      <div className="flex flex-wrap items-center justify-end gap-2">
         <button
           type="button"
           onClick={openCreateModal}
@@ -465,6 +524,20 @@ export function SewaUnitPage({
                         <div className="text-[11px] font-mono-num t-muted">
                           s/d {formatDateShortID(sewa.tanggalSelesai)} {sewa.jamSelesai}
                         </div>
+                        {(sewa.waktuTibaMuat || sewa.waktuMuatMulai || sewa.waktuMuatSelesai) && (
+                          <div className="text-[10px] font-mono-num t-muted mt-1">
+                            Muat: Tiba {sewa.waktuTibaMuat || '-'} · {sewa.waktuMuatMulai || '-'}–
+                            {sewa.waktuMuatSelesai || '-'}
+                          </div>
+                        )}
+                        {(sewa.waktuTibaBongkar ||
+                          sewa.waktuBongkarMulai ||
+                          sewa.waktuBongkarSelesai) && (
+                          <div className="text-[10px] font-mono-num t-muted">
+                            Bongkar: Tiba {sewa.waktuTibaBongkar || '-'} ·{' '}
+                            {sewa.waktuBongkarMulai || '-'}–{sewa.waktuBongkarSelesai || '-'}
+                          </div>
+                        )}
                       </td>
                       <td className="py-3.5 px-4">
                         {sewa.kmAwal ? (
@@ -731,6 +804,114 @@ export function SewaUnitPage({
                 </div>
               </div>
 
+              {/* Detail Waktu Tiba, Waktu Muat & Waktu Bongkar */}
+              <div className="p-3.5 rounded-2xl t-subtle border t-border space-y-3">
+                <div className="text-[11px] font-bold uppercase tracking-wider t-link">
+                  Rincian Waktu Tiba, Muat &amp; Bongkar
+                </div>
+
+                {/* Tahap Lokasi Muat */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[11px] font-bold t-muted">Tahap Lokasi Muat</span>
+                    {formatDurationBadge(waktuMuatMulai, waktuMuatSelesai) && (
+                      <span className="text-[11px] font-mono-num font-semibold t-muted">
+                        Durasi Muat: {formatDurationBadge(waktuMuatMulai, waktuMuatSelesai)}
+                      </span>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                    <div>
+                      <label htmlFor="sewa-tiba-muat" className="block t-field-label mb-1">
+                        Waktu Tiba (Muat)
+                      </label>
+                      <input
+                        id="sewa-tiba-muat"
+                        type="time"
+                        value={waktuTibaMuat}
+                        onChange={(e) => setWaktuTibaMuat(e.target.value)}
+                        className="w-full px-2.5 py-2 rounded-xl t-input font-mono-num"
+                      />
+                    </div>
+                    <div>
+                      <label htmlFor="sewa-muat-mulai" className="block t-field-label mb-1">
+                        Waktu Mulai Muat
+                      </label>
+                      <input
+                        id="sewa-muat-mulai"
+                        type="time"
+                        value={waktuMuatMulai}
+                        onChange={(e) => setWaktuMuatMulai(e.target.value)}
+                        className="w-full px-2.5 py-2 rounded-xl t-input font-mono-num"
+                      />
+                    </div>
+                    <div>
+                      <label htmlFor="sewa-muat-selesai" className="block t-field-label mb-1">
+                        Waktu Selesai Muat
+                      </label>
+                      <input
+                        id="sewa-muat-selesai"
+                        type="time"
+                        value={waktuMuatSelesai}
+                        onChange={(e) => setWaktuMuatSelesai(e.target.value)}
+                        className="w-full px-2.5 py-2 rounded-xl t-input font-mono-num"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Tahap Lokasi Bongkar */}
+                <div className="pt-2.5 border-t t-border space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[11px] font-bold t-muted">Tahap Lokasi Bongkar</span>
+                    {formatDurationBadge(waktuBongkarMulai, waktuBongkarSelesai) && (
+                      <span className="text-[11px] font-mono-num font-semibold t-muted">
+                        Durasi Bongkar:{' '}
+                        {formatDurationBadge(waktuBongkarMulai, waktuBongkarSelesai)}
+                      </span>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                    <div>
+                      <label htmlFor="sewa-tiba-bongkar" className="block t-field-label mb-1">
+                        Waktu Tiba (Bongkar)
+                      </label>
+                      <input
+                        id="sewa-tiba-bongkar"
+                        type="time"
+                        value={waktuTibaBongkar}
+                        onChange={(e) => setWaktuTibaBongkar(e.target.value)}
+                        className="w-full px-2.5 py-2 rounded-xl t-input font-mono-num"
+                      />
+                    </div>
+                    <div>
+                      <label htmlFor="sewa-bongkar-mulai" className="block t-field-label mb-1">
+                        Waktu Mulai Bongkar
+                      </label>
+                      <input
+                        id="sewa-bongkar-mulai"
+                        type="time"
+                        value={waktuBongkarMulai}
+                        onChange={(e) => setWaktuBongkarMulai(e.target.value)}
+                        className="w-full px-2.5 py-2 rounded-xl t-input font-mono-num"
+                      />
+                    </div>
+                    <div>
+                      <label htmlFor="sewa-bongkar-selesai" className="block t-field-label mb-1">
+                        Waktu Selesai Bongkar
+                      </label>
+                      <input
+                        id="sewa-bongkar-selesai"
+                        type="time"
+                        value={waktuBongkarSelesai}
+                        onChange={(e) => setWaktuBongkarSelesai(e.target.value)}
+                        className="w-full px-2.5 py-2 rounded-xl t-input font-mono-num"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <span className="block t-field-label mb-1">Layanan Sewa *</span>
@@ -954,75 +1135,158 @@ export function SewaUnitPage({
           className="fixed inset-0 z-50 bg-black/55 backdrop-blur-xs flex items-center justify-center p-4"
           onClick={() => setReturnTarget(null)}
         >
-          <div
-            className="w-full max-w-lg t-card rounded-2xl shadow-2xl overflow-hidden"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="px-5 py-4 border-b t-border flex items-center justify-between gap-2">
-              <div>
-                <h3 className="text-base font-display t-text">
-                  Terima Kembali Unit &mdash; {returnTarget.nomorSewa}
-                </h3>
-                <p className="text-[11px] t-muted">
-                  KM Awal: <b>{(returnTarget.kmAwal || 0).toLocaleString('id-ID')} km</b> &middot;
-                  Status akan menjadi <b>Dikembalikan</b>.
-                </p>
+            <div
+              className="w-full max-w-lg max-h-[92vh] flex flex-col t-card rounded-2xl shadow-2xl overflow-hidden"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="px-5 py-4 border-b t-border flex items-center justify-between gap-2 shrink-0">
+                <div>
+                  <h3 className="text-base font-display t-text">
+                    Terima Kembali Unit &mdash; {returnTarget.nomorSewa}
+                  </h3>
+                  <p className="text-[11px] t-muted">
+                    KM Awal: <b>{(returnTarget.kmAwal || 0).toLocaleString('id-ID')} km</b> &middot;
+                    Status akan menjadi <b>Dikembalikan</b>.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setReturnTarget(null)}
+                  aria-label="Tutup modal pengembalian"
+                  className="p-1.5 rounded-xl t-btn-secondary"
+                >
+                  <X className="w-4 h-4" />
+                </button>
               </div>
-              <button
-                type="button"
-                onClick={() => setReturnTarget(null)}
-                aria-label="Tutup modal pengembalian"
-                className="p-1.5 rounded-xl t-btn-secondary"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-            <form onSubmit={handleReturnSubmit} className="p-5 space-y-4 text-xs">
-              {retError && (
-                <div className="p-3 rounded-xl t-status-bad font-semibold">{retError}</div>
-              )}
-              <div className="grid grid-cols-3 gap-3">
-                <div>
-                  <label htmlFor="ret-tgl" className="block t-field-label mb-1">
-                    Tgl Kembali *
-                  </label>
-                  <input
-                    id="ret-tgl"
-                    type="date"
-                    required
-                    value={retTanggal}
-                    onChange={(e) => setRetTanggal(e.target.value)}
-                    className="w-full px-2.5 py-2 rounded-xl t-input font-mono-num"
-                  />
+              <form onSubmit={handleReturnSubmit} className="p-5 overflow-y-auto space-y-4 text-xs">
+                {retError && (
+                  <div className="p-3 rounded-xl t-status-bad font-semibold">{retError}</div>
+                )}
+                <div className="grid grid-cols-3 gap-3">
+                  <div>
+                    <label htmlFor="ret-tgl" className="block t-field-label mb-1">
+                      Tgl Kembali *
+                    </label>
+                    <input
+                      id="ret-tgl"
+                      type="date"
+                      required
+                      value={retTanggal}
+                      onChange={(e) => setRetTanggal(e.target.value)}
+                      className="w-full px-2.5 py-2 rounded-xl t-input font-mono-num"
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="ret-jam" className="block t-field-label mb-1">
+                      Jam Kembali *
+                    </label>
+                    <input
+                      id="ret-jam"
+                      type="time"
+                      required
+                      value={retJam}
+                      onChange={(e) => setRetJam(e.target.value)}
+                      className="w-full px-2.5 py-2 rounded-xl t-input font-mono-num"
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="ret-km" className="block t-field-label mb-1">
+                      Kilometer Akhir *
+                    </label>
+                    <input
+                      id="ret-km"
+                      type="text"
+                      inputMode="numeric"
+                      required
+                      value={retKmAkhir}
+                      onChange={(e) => setRetKmAkhir(e.target.value.replace(/\D/g, ''))}
+                      className="w-full px-2.5 py-2 rounded-xl t-input font-mono-num font-bold"
+                    />
+                  </div>
                 </div>
-                <div>
-                  <label htmlFor="ret-jam" className="block t-field-label mb-1">
-                    Jam Kembali *
-                  </label>
-                  <input
-                    id="ret-jam"
-                    type="time"
-                    required
-                    value={retJam}
-                    onChange={(e) => setRetJam(e.target.value)}
-                    className="w-full px-2.5 py-2 rounded-xl t-input font-mono-num"
-                  />
+
+                {/* Aktual Waktu Tiba, Muat & Bongkar */}
+                <div className="p-3 rounded-xl t-subtle border t-border space-y-2.5">
+                  <div className="text-[11px] font-bold uppercase tracking-wider t-link">
+                    Aktual Waktu Tiba, Muat &amp; Bongkar
+                  </div>
+                  <div className="grid grid-cols-3 gap-2">
+                    <div>
+                      <label htmlFor="ret-tiba-muat" className="block text-[10px] font-semibold t-muted mb-1">
+                        Tiba Muat
+                      </label>
+                      <input
+                        id="ret-tiba-muat"
+                        type="time"
+                        value={retWaktuTibaMuat}
+                        onChange={(e) => setRetWaktuTibaMuat(e.target.value)}
+                        className="w-full px-2 py-1.5 rounded-lg t-input font-mono-num"
+                      />
+                    </div>
+                    <div>
+                      <label htmlFor="ret-muat-mulai" className="block text-[10px] font-semibold t-muted mb-1">
+                        Mulai Muat
+                      </label>
+                      <input
+                        id="ret-muat-mulai"
+                        type="time"
+                        value={retWaktuMuatMulai}
+                        onChange={(e) => setRetWaktuMuatMulai(e.target.value)}
+                        className="w-full px-2 py-1.5 rounded-lg t-input font-mono-num"
+                      />
+                    </div>
+                    <div>
+                      <label htmlFor="ret-muat-selesai" className="block text-[10px] font-semibold t-muted mb-1">
+                        Selesai Muat
+                      </label>
+                      <input
+                        id="ret-muat-selesai"
+                        type="time"
+                        value={retWaktuMuatSelesai}
+                        onChange={(e) => setRetWaktuMuatSelesai(e.target.value)}
+                        className="w-full px-2 py-1.5 rounded-lg t-input font-mono-num"
+                      />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-3 gap-2 pt-2 border-t t-border">
+                    <div>
+                      <label htmlFor="ret-tiba-bongkar" className="block text-[10px] font-semibold t-muted mb-1">
+                        Tiba Bongkar
+                      </label>
+                      <input
+                        id="ret-tiba-bongkar"
+                        type="time"
+                        value={retWaktuTibaBongkar}
+                        onChange={(e) => setRetWaktuTibaBongkar(e.target.value)}
+                        className="w-full px-2 py-1.5 rounded-lg t-input font-mono-num"
+                      />
+                    </div>
+                    <div>
+                      <label htmlFor="ret-bongkar-mulai" className="block text-[10px] font-semibold t-muted mb-1">
+                        Mulai Bongkar
+                      </label>
+                      <input
+                        id="ret-bongkar-mulai"
+                        type="time"
+                        value={retWaktuBongkarMulai}
+                        onChange={(e) => setRetWaktuBongkarMulai(e.target.value)}
+                        className="w-full px-2 py-1.5 rounded-lg t-input font-mono-num"
+                      />
+                    </div>
+                    <div>
+                      <label htmlFor="ret-bongkar-selesai" className="block text-[10px] font-semibold t-muted mb-1">
+                        Selesai Bongkar
+                      </label>
+                      <input
+                        id="ret-bongkar-selesai"
+                        type="time"
+                        value={retWaktuBongkarSelesai}
+                        onChange={(e) => setRetWaktuBongkarSelesai(e.target.value)}
+                        className="w-full px-2 py-1.5 rounded-lg t-input font-mono-num"
+                      />
+                    </div>
+                  </div>
                 </div>
-                <div>
-                  <label htmlFor="ret-km" className="block t-field-label mb-1">
-                    Kilometer Akhir *
-                  </label>
-                  <input
-                    id="ret-km"
-                    type="text"
-                    inputMode="numeric"
-                    required
-                    value={retKmAkhir}
-                    onChange={(e) => setRetKmAkhir(e.target.value.replace(/\D/g, ''))}
-                    className="w-full px-2.5 py-2 rounded-xl t-input font-mono-num font-bold"
-                  />
-                </div>
-              </div>
               <div>
                 <label htmlFor="ret-kondisi" className="block t-field-label mb-1">
                   Kondisi Unit Saat Kembali *

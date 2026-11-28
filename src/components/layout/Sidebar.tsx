@@ -34,11 +34,11 @@ const PAYROLL_NAV: NavItem[] = [
 const KT_NAV: NavItem[] = [
   { id: 'menu-kt-dashboard', label: 'Dashboard' },
   { id: 'menu-kt-transaksi', label: 'Transaksi' },
+  { id: 'menu-kt-laporan', label: 'Laporan' },
+  { id: 'menu-kt-hutang', label: 'Hutang piutang' },
   { id: 'menu-kt-stok', label: 'Stok gudang' },
   { id: 'menu-kt-harga', label: 'Master barang' },
   { id: 'menu-kt-customer', label: 'Customer' },
-  { id: 'menu-kt-hutang', label: 'Hutang piutang' },
-  { id: 'menu-kt-laporan', label: 'Laporan' },
   { id: 'menu-kt-pengaturan', label: 'Pengaturan' },
 ];
 

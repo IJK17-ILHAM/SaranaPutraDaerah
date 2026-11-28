@@ -1,6 +1,5 @@
 import { RefreshCw, ShieldCheck, Trash2, UserPlus, Users } from 'lucide-react';
 import { useState } from 'react';
-import { ArmadaMenuIcon } from '../../components/armada/ArmadaMenuIcons';
 import { ARMADA_ACCOUNT_ROLES } from '../../config/constants';
 import type {
   ArmadaAccount,
@@ -113,23 +112,7 @@ export function AkunArmadaPage({
 
   return (
     <div className="space-y-5">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="flex items-start gap-3">
-          <div className="w-11 h-11 rounded-xl t-subtle border t-border flex items-center justify-center shrink-0">
-            <ArmadaMenuIcon id="armada-akun" size={30} />
-          </div>
-          <div>
-            <div className="text-[11px] font-semibold t-link">Khusus SPS Armada</div>
-            <h2 className="text-base sm:text-lg font-display font-bold t-text leading-snug">
-              Kelola Akun Armada
-            </h2>
-            <p className="text-xs t-muted mt-0.5 max-w-2xl">
-              Akun sopir, admin armada, kepala armada, dan mekanik tersimpan pada tab{' '}
-              <b>Akun Armada</b> di SPS Armada (terpisah dari SPS Gajian).
-            </p>
-          </div>
-        </div>
-
+      <div className="flex flex-wrap items-center justify-end gap-2">
         <button
           type="button"
           onClick={onRefreshSps}

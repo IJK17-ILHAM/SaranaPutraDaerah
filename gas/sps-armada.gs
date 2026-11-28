@@ -7,6 +7,7 @@
  *
  * Struktur folder otomatis di Google Drive:
  *   Armada Root/
+ *     ├── Pengajuan Barang/        (Folder khusus foto & lampiran Pengajuan Barang)
  *     ├── B 9001 ARM/
  *     │    ├── P2H/
  *     │    ├── Perbaikan/
@@ -26,6 +27,7 @@
  */
 
 var ARMADA_DRIVE_ROOT_FOLDER_ID = '1Ch63swBO71_GofpT6BTov3f-O1Q3wjyZ';
+var PENGAJUAN_BARANG_FOLDER_NAME = 'Pengajuan Barang';
 
 var ARMADA_SHEETS = {
   units: 'Unit Armada',
@@ -46,6 +48,7 @@ var SHEET_DEFAULT_KATEGORI = {
   'Unit Armada': 'Berkas Kendaraan',
   P2H: 'P2H',
   Maintenance: 'Perbaikan',
+  'Permintaan Barang': 'Pengajuan Barang',
   'Sewa Unit': 'Sewa Unit',
   'Uang Jalan': 'Uang Jalan',
   Perjalanan: 'Perjalanan',
@@ -53,11 +56,14 @@ var SHEET_DEFAULT_KATEGORI = {
 };
 
 /**
- * Jalankan fungsi ini 1x di editor Apps Script untuk memberikan izin akses Google Drive & Spreadsheet.
+ * Jalankan fungsi ini 1x di editor Apps Script untuk memberikan izin akses Google Drive & Spreadsheet
+ * sekaligus membuat folder khusus Pengajuan Barang.
  */
 function ujiIzinDrive() {
   var folder = DriveApp.getFolderById(ARMADA_DRIVE_ROOT_FOLDER_ID);
+  var pbFolder = ensurePengajuanBarangFolder_(ARMADA_DRIVE_ROOT_FOLDER_ID);
   Logger.log('Terhubung ke folder Drive Armada: ' + folder.getName());
+  Logger.log('Folder khusus Pengajuan Barang: ' + pbFolder.getName() + ' -> ' + pbFolder.getUrl());
 }
 
 function doGet(e) {
@@ -74,6 +80,14 @@ function doGet(e) {
     } else if (action === 'getArmadaUsers') {
       var accSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(ARMADA_SHEETS.accounts);
       result = { status: 'ok', accounts: accSheet ? readSheetObjects_(accSheet) : [] };
+    } else if (action === 'ensurePengajuanBarangFolder') {
+      var pbFolder = ensurePengajuanBarangFolder_(params.rootFolderId || ARMADA_DRIVE_ROOT_FOLDER_ID);
+      result = {
+        status: 'ok',
+        folderId: pbFolder.getId(),
+        folderName: pbFolder.getName(),
+        folderUrl: pbFolder.getUrl(),
+      };
     } else if (action === 'saveRecord') {
       var dataObj = JSON.parse(params.data || '{}');
       result = saveRecordWithDrive_(params.sheet, dataObj, null);
@@ -97,14 +111,30 @@ function doPost(e) {
     var rootId = body.rootFolderId || (body.driveMeta && body.driveMeta.rootFolderId) || ARMADA_DRIVE_ROOT_FOLDER_ID;
 
     if (action === 'uploadDriveFile') {
-      var uploaded = saveBase64ToVehicleDrive_(
-        rootId,
-        body.nomorPolisi || body.kodeUnit || 'UMUM',
-        body.kategori || 'Berkas Kendaraan',
-        buildFriendlyFileName_(body.refNumber || body.kodeUnit || '', body.fileName || 'dokumen.jpg'),
-        body.dataUrl || '',
-      );
+      var uploaded =
+        body.folderMode === 'pengajuan_barang' || body.kategori === 'Pengajuan Barang'
+          ? saveBase64ToPengajuanBarangDrive_(
+              rootId,
+              body.unitNomorPolisi || body.nomorPolisi || body.kodeUnit || '',
+              buildFriendlyFileName_(body.refNumber || body.kodeUnit || 'PB', body.fileName || 'foto.jpg'),
+              body.dataUrl || '',
+            )
+          : saveBase64ToVehicleDrive_(
+              rootId,
+              body.nomorPolisi || body.kodeUnit || 'UMUM',
+              body.kategori || 'Berkas Kendaraan',
+              buildFriendlyFileName_(body.refNumber || body.kodeUnit || '', body.fileName || 'dokumen.jpg'),
+              body.dataUrl || '',
+            );
       result = { status: 'ok', file: uploaded };
+    } else if (action === 'ensurePengajuanBarangFolder') {
+      var ensuredPb = ensurePengajuanBarangFolder_(rootId);
+      result = {
+        status: 'ok',
+        folderId: ensuredPb.getId(),
+        folderName: ensuredPb.getName(),
+        folderUrl: ensuredPb.getUrl(),
+      };
     } else if (action === 'saveRecord') {
       result = saveRecordWithDrive_(body.sheet, body.data || {}, body.driveMeta || { rootFolderId: rootId });
     } else if (action === 'deleteRecord') {
@@ -181,6 +211,22 @@ function ensureVehicleFolder_(rootFolderId, nomorPolisi) {
   return getOrCreateChildFolder_(root, plateName);
 }
 
+/**
+ * Membuat / mengambil folder khusus "Pengajuan Barang" tepat di dalam root Drive Armada.
+ * Memeriksa nama secara case-insensitive agar tidak terbentuk folder duplikat.
+ */
+function ensurePengajuanBarangFolder_(rootFolderId) {
+  var root = DriveApp.getFolderById(rootFolderId || ARMADA_DRIVE_ROOT_FOLDER_ID);
+  var it = root.getFolders();
+  while (it.hasNext()) {
+    var f = it.next();
+    if (String(f.getName() || '').trim().toLowerCase() === PENGAJUAN_BARANG_FOLDER_NAME.toLowerCase()) {
+      return f;
+    }
+  }
+  return root.createFolder(PENGAJUAN_BARANG_FOLDER_NAME);
+}
+
 function buildFriendlyFileName_(prefix, originalName) {
   var today = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd_HHmmss');
   var safePrefix = String(prefix || '')
@@ -190,6 +236,45 @@ function buildFriendlyFileName_(prefix, originalName) {
     .trim()
     .replace(/[\\/:*?"<>|]+/g, '_');
   return safePrefix ? today + '_' + safePrefix + '_' + safeOrig : today + '_' + safeOrig;
+}
+
+function saveBase64ToPengajuanBarangDrive_(rootFolderId, unitNomorPolisi, fileName, dataUrl) {
+  if (!dataUrl || String(dataUrl).indexOf('data:') !== 0) return null;
+
+  var match = String(dataUrl).match(/^data:([^;]+);base64,(.+)$/);
+  if (!match) return null;
+
+  var mimeType = match[1] || 'image/jpeg';
+  var base64Data = match[2];
+  var bytes = Utilities.base64Decode(base64Data);
+
+  var finalName = fileName;
+  if (finalName.indexOf('.') === -1) {
+    var ext = mimeType.indexOf('png') !== -1 ? '.png' : mimeType.indexOf('pdf') !== -1 ? '.pdf' : '.jpg';
+    finalName = finalName + ext;
+  }
+
+  var pbFolder = ensurePengajuanBarangFolder_(rootFolderId);
+  var plateClean = unitNomorPolisi ? normalizePlateFolderName_(unitNomorPolisi) : '';
+  var targetFolder =
+    plateClean && plateClean !== 'UMUM' && plateClean !== '-' && plateClean !== 'PENGAJUAN BARANG'
+      ? getOrCreateChildFolder_(pbFolder, plateClean)
+      : pbFolder;
+  var blob = Utilities.newBlob(bytes, mimeType, finalName);
+  var file = targetFolder.createFile(blob);
+
+  try {
+    file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+  } catch (e) {
+    // Tetap lanjut jika kebijakan domain Google Workspace membatasi sharing publik
+  }
+
+  return {
+    fileId: file.getId(),
+    fileName: file.getName(),
+    viewUrl: file.getUrl(),
+    folderUrl: pbFolder.getUrl(),
+  };
 }
 
 function saveBase64ToVehicleDrive_(rootFolderId, nomorPolisi, kategori, fileName, dataUrl) {
@@ -266,10 +351,16 @@ function extractMediaToDrive_(sheetName, dataObj, driveMeta) {
   if (!dataObj || typeof dataObj !== 'object') return dataObj;
   var copy = JSON.parse(JSON.stringify(dataObj));
   var rootId = (driveMeta && driveMeta.rootFolderId) || ARMADA_DRIVE_ROOT_FOLDER_ID;
-  var plate = resolvePlateFromRecord_(sheetName, copy, driveMeta);
+  var isPengajuanBarang =
+    sheetName === ARMADA_SHEETS.permintaanBarang ||
+    (driveMeta && driveMeta.folderMode === 'pengajuan_barang');
+  var plate = isPengajuanBarang
+    ? (driveMeta && driveMeta.unitNomorPolisi) || copy.nomorPolisi || copy.kodeUnit || ''
+    : resolvePlateFromRecord_(sheetName, copy, driveMeta);
   var kategori = (driveMeta && driveMeta.kategori) || SHEET_DEFAULT_KATEGORI[sheetName] || 'Lainnya';
   var ref =
     (driveMeta && driveMeta.refNumber) ||
+    copy.nomorPermintaan ||
     copy.nomorP2H ||
     copy.nomorPengajuan ||
     copy.nomorSewa ||
@@ -290,6 +381,16 @@ function extractMediaToDrive_(sheetName, dataObj, driveMeta) {
     }
   }
 
+  // Jika menyimpan Permintaan Barang, otomatis pastikan folder khusus Pengajuan Barang tersedia
+  if (isPengajuanBarang) {
+    try {
+      var pbFolder = ensurePengajuanBarangFolder_(rootId);
+      copy.driveFolderUrl = pbFolder.getUrl();
+    } catch (e) {
+      // Abaikan jika izin Drive belum aktif
+    }
+  }
+
   // 1. Field foto/dokumen level atas
   var topMediaFields = [
     { dataKey: 'fotoDataUrl', nameKey: 'fotoNama', label: 'foto' },
@@ -303,15 +404,25 @@ function extractMediaToDrive_(sheetName, dataObj, driveMeta) {
     var val = copy[spec.dataKey];
     if (typeof val === 'string' && val.indexOf('data:') === 0) {
       var origName = copy[spec.nameKey] || spec.label + '.jpg';
-      var saved = saveBase64ToVehicleDrive_(
-        rootId,
-        plate,
-        kategori,
-        buildFriendlyFileName_(ref + '_' + spec.label, origName),
-        val,
-      );
+      var saved = isPengajuanBarang
+        ? saveBase64ToPengajuanBarangDrive_(
+            rootId,
+            plate,
+            buildFriendlyFileName_(ref + '_' + spec.label, origName),
+            val,
+          )
+        : saveBase64ToVehicleDrive_(
+            rootId,
+            plate,
+            kategori,
+            buildFriendlyFileName_(ref + '_' + spec.label, origName),
+            val,
+          );
       if (saved) {
         copy[spec.dataKey] = saved.viewUrl;
+        if (isPengajuanBarang && saved.folderUrl) {
+          copy.driveFolderUrl = saved.folderUrl;
+        }
       }
     }
   });
@@ -433,6 +544,12 @@ function handleGetAll_() {
     var sheet = ss.getSheetByName(sheetName);
     out[key] = sheet ? readSheetObjects_(sheet) : [];
   });
+  try {
+    var pbFolder = ensurePengajuanBarangFolder_(ARMADA_DRIVE_ROOT_FOLDER_ID);
+    out.pengajuanBarangDriveUrl = pbFolder.getUrl();
+  } catch (e) {
+    // Abaikan jika izin Drive belum aktif
+  }
   return out;
 }
 

@@ -1,15 +1,25 @@
-import { Package, Pencil, RotateCcw, Save, Trash2 } from 'lucide-react';
+import { Download, Package, Pencil, RotateCcw, Save, Trash2, Upload } from 'lucide-react';
 import { useState } from 'react';
 import { PageHeader } from '../../components/common/PageHeader';
+import {
+  KtMasterImportModal,
+  type KtMasterImportExecutionResult,
+} from '../../components/kasTonase/KtMasterImportModal';
 import { useApp } from '../../context/AppContext';
 import { useKasTonase } from '../../context/KasTonaseContext';
 import type { KtBarang } from '../../types/kasTonase';
 import { formatNumberWithDots } from '../../utils/format';
+import {
+  downloadKtMasterTemplate,
+  parseKtMasterWorkbook,
+  type KtMasterTabKey,
+} from '../../utils/ktMasterSpreadsheet';
 
 export function KtHargaPage() {
   const { requestConfirm } = useApp();
-  const { barangList, saveBarang, deleteBarang } = useKasTonase();
+  const { barangList, saveBarang, deleteBarang, importKtMasterBatch } = useKasTonase();
 
+  const [importModalOpen, setImportModalOpen] = useState(false);
   const [editId, setEditId] = useState('');
   const [nama, setNama] = useState('');
   const [potDefault, setPotDefault] = useState('0');
@@ -58,6 +68,33 @@ export function KtHargaPage() {
     resetForm();
   };
 
+  const handleImportFile = async (
+    file: File,
+    preferredTab: KtMasterTabKey | 'all',
+  ): Promise<KtMasterImportExecutionResult | null> => {
+    const parsed = await parseKtMasterWorkbook(file, preferredTab);
+    if (parsed.tabsFound.length === 0) {
+      return {
+        barangImported: 0,
+        customersImported: 0,
+        tabsFound: [],
+        skipped: parsed.skipped,
+        warnings: parsed.warnings,
+      };
+    }
+    const { barangImported, customersImported } = importKtMasterBatch({
+      barang: parsed.barang,
+      customers: parsed.customers,
+    });
+    return {
+      barangImported,
+      customersImported,
+      tabsFound: parsed.tabsFound,
+      skipped: parsed.skipped,
+      warnings: parsed.warnings,
+    };
+  };
+
   return (
     <section className="space-y-5">
       <PageHeader
@@ -65,6 +102,28 @@ export function KtHargaPage() {
         pageLabel="Master barang"
         title="Master Barang"
         subtitle="Kelola daftar jenis barang gudang. Cukup isi Nama Barang; harga/kg diisi langsung di setiap nota transaksi Beli atau Jual."
+        actions={
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => downloadKtMasterTemplate('barang')}
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl t-btn-secondary text-xs font-semibold whitespace-nowrap"
+              title="Unduh template Excel Master Barang"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span>Template</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setImportModalOpen(true)}
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl t-btn-primary text-xs font-semibold whitespace-nowrap"
+              title="Impor Master Barang dari file Excel/CSV"
+            >
+              <Upload className="w-3.5 h-3.5" />
+              <span>Impor Excel</span>
+            </button>
+          </div>
+        }
       />
 
       <form onSubmit={handleSubmit} className="t-card rounded-2xl p-5 space-y-4">
@@ -188,6 +247,12 @@ export function KtHargaPage() {
           </table>
         </div>
       </div>
+      <KtMasterImportModal
+        open={importModalOpen}
+        tabKey="barang"
+        onClose={() => setImportModalOpen(false)}
+        onImportFile={handleImportFile}
+      />
     </section>
   );
 }

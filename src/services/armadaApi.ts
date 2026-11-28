@@ -43,6 +43,7 @@ export type ArmadaCollectionKey =
 export type ArmadaDriveKategori =
   | 'P2H'
   | 'Perbaikan'
+  | 'Pengajuan Barang'
   | 'Sewa Unit'
   | 'Uang Jalan'
   | 'Perjalanan'
@@ -52,9 +53,11 @@ export type ArmadaDriveKategori =
 export interface ArmadaDriveMeta {
   rootFolderId?: string;
   nomorPolisi?: string;
+  unitNomorPolisi?: string;
   kodeUnit?: string;
-  kategori?: ArmadaDriveKategori;
+  kategori?: ArmadaDriveKategori | string;
   refNumber?: string;
+  folderMode?: 'vehicle' | 'pengajuan_barang';
 }
 
 export const ARMADA_SHEET_NAMES: Record<ArmadaCollectionKey, string> = {
@@ -77,6 +80,7 @@ export const COLLECTION_TO_DRIVE_KATEGORI: Partial<
 > = {
   p2h: 'P2H',
   maintenance: 'Perbaikan',
+  permintaanBarang: 'Pengajuan Barang',
   sewa: 'Sewa Unit',
   uangJalan: 'Uang Jalan',
   perjalanan: 'Perjalanan',
@@ -101,12 +105,15 @@ export interface ArmadaSpsSnapshot {
 
 export interface ParsedArmadaSpsData extends ArmadaSpsSnapshot {
   updated: boolean;
+  pengajuanBarangDriveUrl?: string;
 }
 
 interface ArmadaSpsResponse {
   status?: string;
   message?: string;
   user?: UserSession;
+  folderUrl?: string;
+  pengajuanBarangDriveUrl?: string;
   units?: Record<string, unknown>[];
   pelanggan?: Record<string, unknown>[];
   lokasi?: Record<string, unknown>[];
@@ -390,6 +397,9 @@ function normalizePermintaanBarang(rows: Record<string, unknown>[]): ArmadaPermi
       ...(r as unknown as ArmadaPermintaanBarang),
       id: String(r.id || `PB_${r.nomorPermintaan}`),
       items: parseJsonArray<PermintaanBarangItem>(r.items),
+      fotoDataUrl: r.fotoDataUrl ? String(r.fotoDataUrl) : undefined,
+      fotoNama: r.fotoNama ? String(r.fotoNama) : undefined,
+      driveFolderUrl: r.driveFolderUrl ? String(r.driveFolderUrl) : undefined,
     }));
 }
 
@@ -536,8 +546,45 @@ export async function fetchArmadaAllFromSPS(): Promise<ParsedArmadaSpsData> {
     result.accounts = normalizeAccounts(json.accounts);
     result.updated = true;
   }
+  if (typeof json.pengajuanBarangDriveUrl === 'string' && json.pengajuanBarangDriveUrl.trim()) {
+    result.pengajuanBarangDriveUrl = json.pengajuanBarangDriveUrl.trim();
+  }
 
   return result;
+}
+
+/**
+ * Ensures the dedicated "Pengajuan Barang" folder exists inside Google Drive Armada Root
+ * and returns its direct Google Drive URL when supported by the deployed Apps Script.
+ */
+export async function ensurePengajuanBarangDriveFolderFromSPS(): Promise<string | null> {
+  try {
+    const res = await jsonpRequest<ArmadaSpsResponse>(
+      {
+        action: 'ensurePengajuanBarangFolder',
+        rootFolderId: GOOGLE_ARMADA_DRIVE_FOLDER_ID,
+        t: Date.now(),
+      },
+      12000,
+      GOOGLE_ARMADA_URL,
+    );
+    if (res && res.status === 'ok' && typeof res.folderUrl === 'string' && res.folderUrl.trim()) {
+      return res.folderUrl.trim();
+    }
+  } catch {
+    // Fallback to fire-and-forget POST trigger if JSONP action not yet redeployed
+  }
+
+  try {
+    await postToArmadaSps({
+      action: 'ensurePengajuanBarangFolder',
+      rootFolderId: GOOGLE_ARMADA_DRIVE_FOLDER_ID,
+    });
+  } catch {
+    // Ignore network error
+  }
+
+  return null;
 }
 
 async function postToArmadaSps(body: Record<string, unknown>): Promise<void> {
@@ -562,14 +609,30 @@ export async function syncArmadaRecordToSPS<T extends object>(
 ): Promise<{ ok: boolean }> {
   const sheet = ARMADA_SHEET_NAMES[collection];
   const hasMedia = containsEmbeddedMedia(record);
-  const fullDriveMeta: ArmadaDriveMeta = {
-    rootFolderId: GOOGLE_ARMADA_DRIVE_FOLDER_ID,
-    kategori: COLLECTION_TO_DRIVE_KATEGORI[collection],
-    ...driveMeta,
-  };
+  const isPengajuanBarang = collection === 'permintaanBarang';
+  const unitPlate = driveMeta?.nomorPolisi || '';
 
-  // Always use POST if embedded media is present (or Unit Armada so Drive folder gets created reliably)
-  if (hasMedia || collection === 'units') {
+  // For Permintaan Barang, route files into dedicated root folder "Pengajuan Barang"
+  // (works both on the updated Apps Script via folderMode='pengajuan_barang' and on older
+  // deployments where nomorPolisi='Pengajuan Barang' creates the dedicated top-level folder).
+  const fullDriveMeta: ArmadaDriveMeta = isPengajuanBarang
+    ? {
+        rootFolderId: GOOGLE_ARMADA_DRIVE_FOLDER_ID,
+        folderMode: 'pengajuan_barang',
+        nomorPolisi: 'Pengajuan Barang',
+        unitNomorPolisi: unitPlate,
+        kodeUnit: driveMeta?.kodeUnit,
+        kategori: unitPlate && unitPlate !== '-' ? unitPlate : 'Umum',
+        refNumber: driveMeta?.refNumber,
+      }
+    : {
+        rootFolderId: GOOGLE_ARMADA_DRIVE_FOLDER_ID,
+        kategori: COLLECTION_TO_DRIVE_KATEGORI[collection],
+        ...driveMeta,
+      };
+
+  // Always use POST if embedded media is present (or Unit Armada / Permintaan Barang so Drive folder gets created reliably)
+  if (hasMedia || collection === 'units' || isPengajuanBarang) {
     await postToArmadaSps({
       action: 'saveRecord',
       sheet,

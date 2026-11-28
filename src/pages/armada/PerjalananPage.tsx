@@ -5,8 +5,10 @@ import {
   CalendarClock,
   CheckCircle2,
   ClipboardCheck,
+  Clock,
   Eye,
   Lock,
+  Package,
   Play,
   Plus,
   Route,
@@ -68,6 +70,44 @@ interface PerjalananPageProps {
   onOpenP2H: (p2hId: string) => void;
 }
 
+const JENIS_LIMBAH_OPTIONS = [
+  'Limbah B3 Padat',
+  'Limbah B3 Cair / Sludge',
+  'Limbah Medis / Infeksius',
+  'Limbah Non-B3 Industri',
+  'Limbah Domestik / Organik',
+  'Scrap / Daur Ulang',
+];
+
+const KEMASAN_LIMBAH_OPTIONS = [
+  'Drum 200L',
+  'IBC Tank 1000L',
+  'Jumbo Bag (FIBC)',
+  'Curah / Bak Terbuka',
+  'Kontainer / Roll-Off',
+  'Palet / Box Tertutup',
+];
+
+function parseHHMMToMinutes(value: string): number | null {
+  if (!value || !/^\d{2}:\d{2}$/.test(value)) return null;
+  const [h, m] = value.split(':').map(Number);
+  if (isNaN(h) || isNaN(m)) return null;
+  return h * 60 + m;
+}
+
+function formatDurationBadge(startHHMM?: string, endHHMM?: string): string | null {
+  if (!startHHMM || !endHHMM) return null;
+  const start = parseHHMMToMinutes(startHHMM);
+  const end = parseHHMMToMinutes(endHHMM);
+  if (start === null || end === null || end <= start) return null;
+  const diff = end - start;
+  const hours = Math.floor(diff / 60);
+  const mins = diff % 60;
+  if (hours > 0 && mins > 0) return `${hours} jam ${mins} mnt`;
+  if (hours > 0) return `${hours} jam`;
+  return `${mins} mnt`;
+}
+
 export function PerjalananPage({
   perjalananList,
   sewaList,
@@ -97,12 +137,24 @@ export function PerjalananPage({
   const [pelangganId, setPelangganId] = useState('');
   const [lokasiMuatId, setLokasiMuatId] = useState('');
   const [lokasiBongkarId, setLokasiBongkarId] = useState('');
+  const [jenisLimbah, setJenisLimbah] = useState(JENIS_LIMBAH_OPTIONS[0]);
+  const [kodeLimbah, setKodeLimbah] = useState('');
+  const [kemasanLimbah, setKemasanLimbah] = useState(KEMASAN_LIMBAH_OPTIONS[0]);
+  const [estimasiMuatan, setEstimasiMuatan] = useState('');
+  const [nomorManifest, setNomorManifest] = useState('');
+  const [nomorSuratJalan, setNomorSuratJalan] = useState('');
   const [nominalTarifText, setNominalTarifText] = useState('');
   const [matchedTarifId, setMatchedTarifId] = useState<string | undefined>(undefined);
   const [tanggalMulai, setTanggalMulai] = useState(getTodayISO());
   const [jamMulai, setJamMulai] = useState('08:00');
   const [tanggalSelesai, setTanggalSelesai] = useState(getTodayISO());
-  const [jamSelesai, setJamSelesai] = useState('12:00');
+  const [jamSelesai, setJamSelesai] = useState('14:00');
+  const [waktuTibaMuat, setWaktuTibaMuat] = useState('08:30');
+  const [waktuMuatMulai, setWaktuMuatMulai] = useState('08:45');
+  const [waktuMuatSelesai, setWaktuMuatSelesai] = useState('09:45');
+  const [waktuTibaBongkar, setWaktuTibaBongkar] = useState('11:30');
+  const [waktuBongkarMulai, setWaktuBongkarMulai] = useState('11:45');
+  const [waktuBongkarSelesai, setWaktuBongkarSelesai] = useState('12:45');
   const [catatan, setCatatan] = useState('');
   const [formError, setFormError] = useState('');
 
@@ -192,10 +244,22 @@ export function PerjalananPage({
     setPelangganId(firstPlg?.id || '');
     setLokasiMuatId(firstMuat?.id || '');
     setLokasiBongkarId(firstBongkar?.id || '');
+    setJenisLimbah(JENIS_LIMBAH_OPTIONS[0]);
+    setKodeLimbah('');
+    setKemasanLimbah(KEMASAN_LIMBAH_OPTIONS[0]);
+    setEstimasiMuatan('');
+    setNomorManifest('');
+    setNomorSuratJalan('');
     setTanggalMulai(getTodayISO());
     setJamMulai('08:00');
     setTanggalSelesai(getTodayISO());
-    setJamSelesai('12:00');
+    setJamSelesai('14:00');
+    setWaktuTibaMuat('08:30');
+    setWaktuMuatMulai('08:45');
+    setWaktuMuatSelesai('09:45');
+    setWaktuTibaBongkar('11:30');
+    setWaktuBongkarMulai('11:45');
+    setWaktuBongkarSelesai('12:45');
     setCatatan('');
     setNominalTarifText('');
     setMatchedTarifId(undefined);
@@ -225,6 +289,20 @@ export function PerjalananPage({
       return;
     }
 
+    const muatStartMin = parseHHMMToMinutes(waktuMuatMulai);
+    const muatEndMin = parseHHMMToMinutes(waktuMuatSelesai);
+    if (muatStartMin !== null && muatEndMin !== null && muatEndMin < muatStartMin) {
+      setFormError('Waktu selesai muat tidak boleh lebih awal dari waktu mulai muat.');
+      return;
+    }
+
+    const bongkarStartMin = parseHHMMToMinutes(waktuBongkarMulai);
+    const bongkarEndMin = parseHHMMToMinutes(waktuBongkarSelesai);
+    if (bongkarStartMin !== null && bongkarEndMin !== null && bongkarEndMin < bongkarStartMin) {
+      setFormError('Waktu selesai bongkar tidak boleh lebih awal dari waktu mulai bongkar.');
+      return;
+    }
+
     const conflict = checkUnitScheduleConflict({
       unitId,
       tanggalMulai,
@@ -250,6 +328,12 @@ export function PerjalananPage({
         'PRJ',
         perjalananList.map((p) => p.nomorPenugasan),
       ),
+      nomorSuratJalan: nomorSuratJalan.trim() || undefined,
+      nomorManifest: nomorManifest.trim() || undefined,
+      jenisLimbah: jenisLimbah.trim() || undefined,
+      kodeLimbah: kodeLimbah.trim() || undefined,
+      kemasanLimbah: kemasanLimbah.trim() || undefined,
+      estimasiMuatan: estimasiMuatan.trim() || undefined,
       unitId,
       sopirNama: sopirNama.trim(),
       pelangganId,
@@ -262,6 +346,12 @@ export function PerjalananPage({
       jamMulai,
       tanggalSelesai,
       jamSelesai,
+      waktuTibaMuat: waktuTibaMuat || undefined,
+      waktuMuatMulai: waktuMuatMulai || undefined,
+      waktuMuatSelesai: waktuMuatSelesai || undefined,
+      waktuTibaBongkar: waktuTibaBongkar || undefined,
+      waktuBongkarMulai: waktuBongkarMulai || undefined,
+      waktuBongkarSelesai: waktuBongkarSelesai || undefined,
       catatan: catatan.trim(),
     });
     setCreateModalOpen(false);
@@ -505,15 +595,124 @@ export function PerjalananPage({
             </div>
 
             <div className="sm:col-span-2 pt-3 border-t t-border">
-              <div className="t-field-label">Lokasi Muat</div>
+              <div className="t-field-label">Lokasi Muat (Penghasil Limbah)</div>
               <div className="font-semibold t-text mt-1">{muat?.namaLokasi || '-'}</div>
               <div className="text-[11px] t-muted mt-0.5">{muat?.alamatLengkap || '-'}</div>
             </div>
             <div className="sm:col-span-2 pt-3 border-t t-border">
-              <div className="t-field-label">Lokasi Bongkar</div>
+              <div className="t-field-label">Lokasi Bongkar (Pengolah / Pemanfaat)</div>
               <div className="font-semibold t-text mt-1">{bongkar?.namaLokasi || '-'}</div>
               <div className="text-[11px] t-muted mt-0.5">{bongkar?.alamatLengkap || '-'}</div>
             </div>
+
+            {(selectedPerjalanan.jenisLimbah ||
+              selectedPerjalanan.kodeLimbah ||
+              selectedPerjalanan.kemasanLimbah ||
+              selectedPerjalanan.estimasiMuatan ||
+              selectedPerjalanan.nomorManifest) && (
+              <div className="sm:col-span-2 lg:col-span-4 pt-3 border-t t-border grid grid-cols-2 sm:grid-cols-4 gap-4">
+                <div>
+                  <div className="t-field-label">Jenis &amp; Kode Limbah</div>
+                  <div className="font-semibold t-text mt-1">
+                    {selectedPerjalanan.jenisLimbah || '-'}
+                  </div>
+                  {selectedPerjalanan.kodeLimbah && (
+                    <div className="text-[11px] font-mono-num t-muted">
+                      Kode: {selectedPerjalanan.kodeLimbah}
+                    </div>
+                  )}
+                </div>
+                <div>
+                  <div className="t-field-label">Kemasan / Wadah</div>
+                  <div className="font-semibold t-text mt-1">
+                    {selectedPerjalanan.kemasanLimbah || '-'}
+                  </div>
+                </div>
+                <div>
+                  <div className="t-field-label">Estimasi Berat / Volume</div>
+                  <div className="font-mono-num font-semibold t-text mt-1">
+                    {selectedPerjalanan.estimasiMuatan || '-'}
+                  </div>
+                </div>
+                <div>
+                  <div className="t-field-label">No. Manifest / Festronik</div>
+                  <div className="font-mono-num font-semibold t-text mt-1">
+                    {selectedPerjalanan.nomorManifest || '-'}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {(selectedPerjalanan.waktuTibaMuat ||
+              selectedPerjalanan.waktuMuatMulai ||
+              selectedPerjalanan.waktuMuatSelesai ||
+              selectedPerjalanan.waktuTibaBongkar ||
+              selectedPerjalanan.waktuBongkarMulai ||
+              selectedPerjalanan.waktuBongkarSelesai) && (
+              <div className="sm:col-span-2 lg:col-span-4 pt-3 border-t t-border grid grid-cols-2 sm:grid-cols-4 gap-4">
+                <div>
+                  <div className="t-field-label">Waktu Tiba (Muat)</div>
+                  <div className="font-mono-num font-bold t-text mt-1">
+                    {selectedPerjalanan.waktuTibaMuat || '-'}
+                  </div>
+                </div>
+                <div>
+                  <div className="t-field-label">Waktu Muat</div>
+                  <div className="font-mono-num font-bold t-text mt-1">
+                    {selectedPerjalanan.waktuMuatMulai || '-'}
+                    {selectedPerjalanan.waktuMuatSelesai
+                      ? ` – ${selectedPerjalanan.waktuMuatSelesai}`
+                      : ''}
+                  </div>
+                  {formatDurationBadge(
+                    selectedPerjalanan.waktuMuatMulai,
+                    selectedPerjalanan.waktuMuatSelesai,
+                  ) && (
+                    <div className="text-[11px] t-muted">
+                      Durasi:{' '}
+                      {formatDurationBadge(
+                        selectedPerjalanan.waktuMuatMulai,
+                        selectedPerjalanan.waktuMuatSelesai,
+                      )}
+                    </div>
+                  )}
+                </div>
+                <div>
+                  <div className="t-field-label">Waktu Tiba (Bongkar)</div>
+                  <div className="font-mono-num font-bold t-text mt-1">
+                    {selectedPerjalanan.waktuTibaBongkar || '-'}
+                  </div>
+                </div>
+                <div>
+                  <div className="t-field-label">Waktu Bongkar</div>
+                  <div className="font-mono-num font-bold t-text mt-1">
+                    {selectedPerjalanan.waktuBongkarMulai || '-'}
+                    {selectedPerjalanan.waktuBongkarSelesai
+                      ? ` – ${selectedPerjalanan.waktuBongkarSelesai}`
+                      : ''}
+                  </div>
+                  {formatDurationBadge(
+                    selectedPerjalanan.waktuBongkarMulai,
+                    selectedPerjalanan.waktuBongkarSelesai,
+                  ) && (
+                    <div className="text-[11px] t-muted">
+                      Durasi:{' '}
+                      {formatDurationBadge(
+                        selectedPerjalanan.waktuBongkarMulai,
+                        selectedPerjalanan.waktuBongkarSelesai,
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {selectedPerjalanan.catatan && (
+              <div className="sm:col-span-2 lg:col-span-4 pt-3 border-t t-border">
+                <div className="t-field-label">Catatan Operasional &amp; Safety</div>
+                <div className="t-text mt-1">{selectedPerjalanan.catatan}</div>
+              </div>
+            )}
           </div>
         </div>
 
@@ -774,23 +973,7 @@ export function PerjalananPage({
   // DAFTAR PERJALANAN VIEW
   return (
     <section className="space-y-5">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div className="flex items-start gap-3">
-          <div className="w-11 h-11 rounded-xl t-subtle border t-border flex items-center justify-center shrink-0">
-            <ArmadaMenuIcon id="armada-perjalanan" size={30} />
-          </div>
-          <div>
-            <h2 className="text-base sm:text-lg font-display font-bold t-text leading-snug">
-              Daftar Perjalanan
-            </h2>
-            <p className="text-xs t-muted mt-0.5 max-w-2xl">
-              Jadwalkan penugasan menggunakan Master Unit, Pelanggan, Lokasi Muat–Bongkar, dan
-              Tarif. Klik baris perjalanan untuk membuka Detail Perjalanan dan mengajukan Uang
-              Jalan.
-            </p>
-          </div>
-        </div>
-
+      <div className="flex flex-wrap items-center justify-end gap-2">
         <button
           type="button"
           onClick={openCreatePerjalanan}
@@ -945,18 +1128,20 @@ export function PerjalananPage({
       {/* Create Perjalanan Modal */}
       {createModalOpen && (
         <div
-          className="fixed inset-0 z-50 bg-black/55 backdrop-blur-xs flex items-center justify-center p-4"
+          className="fixed inset-0 z-50 bg-black/55 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4"
           onClick={() => setCreateModalOpen(false)}
         >
           <div
-            className="w-full max-w-xl max-h-[92vh] flex flex-col t-card rounded-2xl shadow-2xl overflow-hidden"
+            className="w-full max-w-2xl max-h-[92vh] flex flex-col t-card rounded-2xl shadow-2xl overflow-hidden"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="px-5 py-4 border-b t-border flex items-center justify-between gap-2 shrink-0">
               <div>
-                <h3 className="text-base font-display t-text">Buat Perjalanan Baru</h3>
+                <h3 className="text-base font-display t-text">
+                  Buat Perjalanan Angkutan Limbah
+                </h3>
                 <p className="text-[11px] t-muted mt-0.5">
-                  Otomatis mengambil lokasi &amp; tarif dari Master Data serta mengecek bentrok jadwal.
+                  Lengkapi rute, detail muatan limbah, serta jadwal waktu tiba, muat, dan bongkar.
                 </p>
               </div>
               <button
@@ -969,7 +1154,7 @@ export function PerjalananPage({
               </button>
             </div>
 
-            <form onSubmit={handleSubmitPerjalanan} className="p-5 overflow-y-auto space-y-4 text-xs">
+            <form onSubmit={handleSubmitPerjalanan} className="p-4 sm:p-5 overflow-y-auto space-y-4 text-xs">
               {formError && (
                 <div className="p-3 rounded-xl t-status-bad font-semibold flex items-start gap-2">
                   <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
@@ -977,204 +1162,439 @@ export function PerjalananPage({
                 </div>
               )}
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {/* Bagian 1: Penugasan Unit, Sopir & Rute */}
+              <div className="rounded-xl border t-border p-3.5 space-y-3">
+                <div className="flex items-center gap-2 border-b t-border pb-2">
+                  <Route className="w-3.5 h-3.5 t-muted" />
+                  <h4 className="t-section-label">1. Unit, Sopir &amp; Rute Pengangkutan</h4>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label htmlFor="cprj-unit" className="block t-field-label mb-1">
+                      Unit Armada *
+                    </label>
+                    <select
+                      id="cprj-unit"
+                      required
+                      value={unitId}
+                      onChange={(e) => {
+                        const nextId = e.target.value;
+                        setUnitId(nextId);
+                        const u = unitById.get(nextId);
+                        if (u?.supirUtama && u.supirUtama !== '-') setSopirNama(u.supirUtama);
+                        autoMatchTarif(nextId, pelangganId, lokasiMuatId, lokasiBongkarId);
+                      }}
+                      className="w-full px-3 py-2 rounded-xl t-input font-semibold"
+                    >
+                      <option value="">-- Pilih Unit --</option>
+                      {activeUnits.map((u) => (
+                        <option key={u.id} value={u.id}>
+                          {u.kodeUnit} — {u.nomorPolisi} ({u.jenisKendaraan})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label htmlFor="cprj-sopir" className="block t-field-label mb-1">
+                      Sopir Bertugas *
+                    </label>
+                    <input
+                      id="cprj-sopir"
+                      type="text"
+                      required
+                      list="spd-sopir-list"
+                      value={sopirNama}
+                      onChange={(e) => setSopirNama(e.target.value)}
+                      placeholder="Nama sopir bertugas"
+                      className="w-full px-3 py-2 rounded-xl t-input font-semibold"
+                    />
+                    <datalist id="spd-sopir-list">
+                      {ARMADA_SOPIR_LIST.map((s) => (
+                        <option key={s} value={s} />
+                      ))}
+                    </datalist>
+                  </div>
+                </div>
+
                 <div>
-                  <label htmlFor="cprj-unit" className="block t-field-label mb-1">
-                    Unit Armada *
+                  <label htmlFor="cprj-plg" className="block t-field-label mb-1">
+                    Pelanggan / Penghasil Limbah *
                   </label>
                   <select
-                    id="cprj-unit"
+                    id="cprj-plg"
                     required
-                    value={unitId}
+                    value={pelangganId}
                     onChange={(e) => {
-                      const nextId = e.target.value;
-                      setUnitId(nextId);
-                      const u = unitById.get(nextId);
-                      if (u?.supirUtama && u.supirUtama !== '-') setSopirNama(u.supirUtama);
-                      autoMatchTarif(nextId, pelangganId, lokasiMuatId, lokasiBongkarId);
+                      const nextPlg = e.target.value;
+                      setPelangganId(nextPlg);
+                      const nextMuat =
+                        lokasiList.find(
+                          (l) =>
+                            l.pelangganId === nextPlg &&
+                            (l.jenisLokasi === 'Muat' || l.jenisLokasi === 'Keduanya'),
+                        )?.id || '';
+                      const nextBongkar =
+                        lokasiList.find(
+                          (l) =>
+                            l.pelangganId === nextPlg &&
+                            l.id !== nextMuat &&
+                            (l.jenisLokasi === 'Bongkar' || l.jenisLokasi === 'Keduanya'),
+                        )?.id || '';
+                      setLokasiMuatId(nextMuat);
+                      setLokasiBongkarId(nextBongkar);
+                      autoMatchTarif(unitId, nextPlg, nextMuat, nextBongkar);
                     }}
                     className="w-full px-3 py-2 rounded-xl t-input font-semibold"
                   >
-                    <option value="">-- Pilih Unit --</option>
-                    {activeUnits.map((u) => (
-                      <option key={u.id} value={u.id}>
-                        {u.kodeUnit} — {u.nomorPolisi} ({u.jenisKendaraan})
+                    <option value="">-- Pilih Pelanggan --</option>
+                    {pelangganList.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.idPelanggan} — {p.namaPt}
                       </option>
                     ))}
                   </select>
                 </div>
 
-                <div>
-                  <label htmlFor="cprj-sopir" className="block t-field-label mb-1">
-                    Sopir *
-                  </label>
-                  <input
-                    id="cprj-sopir"
-                    type="text"
-                    required
-                    list="spd-sopir-list"
-                    value={sopirNama}
-                    onChange={(e) => setSopirNama(e.target.value)}
-                    placeholder="Nama sopir bertugas"
-                    className="w-full px-3 py-2 rounded-xl t-input font-semibold"
-                  />
-                  <datalist id="spd-sopir-list">
-                    {ARMADA_SOPIR_LIST.map((s) => (
-                      <option key={s} value={s} />
-                    ))}
-                  </datalist>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label htmlFor="cprj-muat" className="block t-field-label mb-1">
+                      Lokasi Muat (Sumber Limbah) *
+                    </label>
+                    <select
+                      id="cprj-muat"
+                      required
+                      value={lokasiMuatId}
+                      onChange={(e) => {
+                        setLokasiMuatId(e.target.value);
+                        autoMatchTarif(unitId, pelangganId, e.target.value, lokasiBongkarId);
+                      }}
+                      className="w-full px-3 py-2 rounded-xl t-input font-semibold"
+                    >
+                      <option value="">-- Pilih Lokasi Muat --</option>
+                      {muatOptions.map((l) => (
+                        <option key={l.id} value={l.id}>
+                          {l.idLokasi} — {l.namaLokasi}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label htmlFor="cprj-bongkar" className="block t-field-label mb-1">
+                      Lokasi Bongkar (Pengolah / Pemanfaat) *
+                    </label>
+                    <select
+                      id="cprj-bongkar"
+                      required
+                      value={lokasiBongkarId}
+                      onChange={(e) => {
+                        setLokasiBongkarId(e.target.value);
+                        autoMatchTarif(unitId, pelangganId, lokasiMuatId, e.target.value);
+                      }}
+                      className="w-full px-3 py-2 rounded-xl t-input font-semibold"
+                    >
+                      <option value="">-- Pilih Lokasi Bongkar --</option>
+                      {bongkarOptions.map((l) => (
+                        <option key={l.id} value={l.id}>
+                          {l.idLokasi} — {l.namaLokasi}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
                 </div>
               </div>
 
-              <div>
-                <label htmlFor="cprj-plg" className="block t-field-label mb-1">
-                  Pelanggan *
-                </label>
-                <select
-                  id="cprj-plg"
-                  required
-                  value={pelangganId}
-                  onChange={(e) => {
-                    const nextPlg = e.target.value;
-                    setPelangganId(nextPlg);
-                    const nextMuat =
-                      lokasiList.find(
-                        (l) =>
-                          l.pelangganId === nextPlg &&
-                          (l.jenisLokasi === 'Muat' || l.jenisLokasi === 'Keduanya'),
-                      )?.id || '';
-                    const nextBongkar =
-                      lokasiList.find(
-                        (l) =>
-                          l.pelangganId === nextPlg &&
-                          l.id !== nextMuat &&
-                          (l.jenisLokasi === 'Bongkar' || l.jenisLokasi === 'Keduanya'),
-                      )?.id || '';
-                    setLokasiMuatId(nextMuat);
-                    setLokasiBongkarId(nextBongkar);
-                    autoMatchTarif(unitId, nextPlg, nextMuat, nextBongkar);
-                  }}
-                  className="w-full px-3 py-2 rounded-xl t-input font-semibold"
-                >
-                  <option value="">-- Pilih Pelanggan --</option>
-                  {pelangganList.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.idPelanggan} — {p.namaPt}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label htmlFor="cprj-muat" className="block t-field-label mb-1">
-                    Lokasi Muat *
-                  </label>
-                  <select
-                    id="cprj-muat"
-                    required
-                    value={lokasiMuatId}
-                    onChange={(e) => {
-                      setLokasiMuatId(e.target.value);
-                      autoMatchTarif(unitId, pelangganId, e.target.value, lokasiBongkarId);
-                    }}
-                    className="w-full px-3 py-2 rounded-xl t-input font-semibold"
-                  >
-                    <option value="">-- Pilih Lokasi Muat --</option>
-                    {muatOptions.map((l) => (
-                      <option key={l.id} value={l.id}>
-                        {l.idLokasi} — {l.namaLokasi}
-                      </option>
-                    ))}
-                  </select>
+              {/* Bagian 2: Detail Muatan Limbah & Dokumen */}
+              <div className="rounded-xl border t-border p-3.5 space-y-3">
+                <div className="flex items-center gap-2 border-b t-border pb-2">
+                  <Package className="w-3.5 h-3.5 t-muted" />
+                  <h4 className="t-section-label">2. Detail Muatan Limbah &amp; Manifest</h4>
                 </div>
 
-                <div>
-                  <label htmlFor="cprj-bongkar" className="block t-field-label mb-1">
-                    Lokasi Bongkar *
-                  </label>
-                  <select
-                    id="cprj-bongkar"
-                    required
-                    value={lokasiBongkarId}
-                    onChange={(e) => {
-                      setLokasiBongkarId(e.target.value);
-                      autoMatchTarif(unitId, pelangganId, lokasiMuatId, e.target.value);
-                    }}
-                    className="w-full px-3 py-2 rounded-xl t-input font-semibold"
-                  >
-                    <option value="">-- Pilih Lokasi Bongkar --</option>
-                    {bongkarOptions.map((l) => (
-                      <option key={l.id} value={l.id}>
-                        {l.idLokasi} — {l.namaLokasi}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div className="sm:col-span-2">
+                    <label htmlFor="cprj-jenis-limbah" className="block t-field-label mb-1">
+                      Jenis Limbah
+                    </label>
+                    <input
+                      id="cprj-jenis-limbah"
+                      type="text"
+                      list="spd-jenis-limbah-list"
+                      value={jenisLimbah}
+                      onChange={(e) => setJenisLimbah(e.target.value)}
+                      placeholder="Pilih atau ketik jenis limbah"
+                      className="w-full px-3 py-2 rounded-xl t-input font-semibold"
+                    />
+                    <datalist id="spd-jenis-limbah-list">
+                      {JENIS_LIMBAH_OPTIONS.map((opt) => (
+                        <option key={opt} value={opt} />
+                      ))}
+                    </datalist>
+                  </div>
 
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                <div>
-                  <label htmlFor="cprj-tgl-mulai" className="block t-field-label mb-1">
-                    Tgl Mulai *
-                  </label>
-                  <input
-                    id="cprj-tgl-mulai"
-                    type="date"
-                    required
-                    value={tanggalMulai}
-                    onChange={(e) => {
-                      setTanggalMulai(e.target.value);
-                      if (e.target.value > tanggalSelesai) setTanggalSelesai(e.target.value);
-                    }}
-                    className="w-full px-2.5 py-2 rounded-xl t-input font-mono-num"
-                  />
+                  <div>
+                    <label htmlFor="cprj-kode-limbah" className="block t-field-label mb-1">
+                      Kode Limbah (B3)
+                    </label>
+                    <input
+                      id="cprj-kode-limbah"
+                      type="text"
+                      value={kodeLimbah}
+                      onChange={(e) => setKodeLimbah(e.target.value)}
+                      placeholder="Mis. B105d / A102d"
+                      className="w-full px-3 py-2 rounded-xl t-input font-mono-num"
+                    />
+                  </div>
                 </div>
-                <div>
-                  <label htmlFor="cprj-jam-mulai" className="block t-field-label mb-1">
-                    Jam Mulai *
-                  </label>
-                  <input
-                    id="cprj-jam-mulai"
-                    type="time"
-                    required
-                    value={jamMulai}
-                    onChange={(e) => setJamMulai(e.target.value)}
-                    className="w-full px-2.5 py-2 rounded-xl t-input font-mono-num"
-                  />
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label htmlFor="cprj-kemasan" className="block t-field-label mb-1">
+                      Kemasan / Wadah Angkut
+                    </label>
+                    <input
+                      id="cprj-kemasan"
+                      type="text"
+                      list="spd-kemasan-limbah-list"
+                      value={kemasanLimbah}
+                      onChange={(e) => setKemasanLimbah(e.target.value)}
+                      placeholder="Mis. Drum 200L, Jumbo Bag, Curah"
+                      className="w-full px-3 py-2 rounded-xl t-input"
+                    />
+                    <datalist id="spd-kemasan-limbah-list">
+                      {KEMASAN_LIMBAH_OPTIONS.map((opt) => (
+                        <option key={opt} value={opt} />
+                      ))}
+                    </datalist>
+                  </div>
+
+                  <div>
+                    <label htmlFor="cprj-muatan" className="block t-field-label mb-1">
+                      Estimasi Berat / Volume
+                    </label>
+                    <input
+                      id="cprj-muatan"
+                      type="text"
+                      value={estimasiMuatan}
+                      onChange={(e) => setEstimasiMuatan(e.target.value)}
+                      placeholder="Mis. 6,5 Ton / 24 Drum"
+                      className="w-full px-3 py-2 rounded-xl t-input font-mono-num"
+                    />
+                  </div>
                 </div>
-                <div>
-                  <label htmlFor="cprj-tgl-selesai" className="block t-field-label mb-1">
-                    Tgl Selesai *
-                  </label>
-                  <input
-                    id="cprj-tgl-selesai"
-                    type="date"
-                    required
-                    value={tanggalSelesai}
-                    onChange={(e) => setTanggalSelesai(e.target.value)}
-                    className="w-full px-2.5 py-2 rounded-xl t-input font-mono-num"
-                  />
-                </div>
-                <div>
-                  <label htmlFor="cprj-jam-selesai" className="block t-field-label mb-1">
-                    Jam Selesai *
-                  </label>
-                  <input
-                    id="cprj-jam-selesai"
-                    type="time"
-                    required
-                    value={jamSelesai}
-                    onChange={(e) => setJamSelesai(e.target.value)}
-                    className="w-full px-2.5 py-2 rounded-xl t-input font-mono-num"
-                  />
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label htmlFor="cprj-manifest" className="block t-field-label mb-1">
+                      No. Manifest / Festronik
+                    </label>
+                    <input
+                      id="cprj-manifest"
+                      type="text"
+                      value={nomorManifest}
+                      onChange={(e) => setNomorManifest(e.target.value)}
+                      placeholder="Mis. FST-2026-00124"
+                      className="w-full px-3 py-2 rounded-xl t-input font-mono-num"
+                    />
+                  </div>
+
+                  <div>
+                    <label htmlFor="cprj-sj" className="block t-field-label mb-1">
+                      No. Surat Jalan / DO (Opsional)
+                    </label>
+                    <input
+                      id="cprj-sj"
+                      type="text"
+                      value={nomorSuratJalan}
+                      onChange={(e) => setNomorSuratJalan(e.target.value)}
+                      placeholder="Otomatis jika dikosongkan"
+                      className="w-full px-3 py-2 rounded-xl t-input font-mono-num"
+                    />
+                  </div>
                 </div>
               </div>
 
+              {/* Bagian 3: Jadwal & Waktu Operasional (Tiba, Muat, Bongkar) */}
+              <div className="rounded-xl border t-border p-3.5 space-y-3">
+                <div className="flex items-center justify-between gap-2 border-b t-border pb-2">
+                  <div className="flex items-center gap-2">
+                    <Clock className="w-3.5 h-3.5 t-muted" />
+                    <h4 className="t-section-label">
+                      3. Jadwal &amp; Waktu Operasional (Tiba, Muat &amp; Bongkar)
+                    </h4>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  <div>
+                    <label htmlFor="cprj-tgl-mulai" className="block t-field-label mb-1">
+                      Tgl Berangkat *
+                    </label>
+                    <input
+                      id="cprj-tgl-mulai"
+                      type="date"
+                      required
+                      value={tanggalMulai}
+                      onChange={(e) => {
+                        setTanggalMulai(e.target.value);
+                        if (e.target.value > tanggalSelesai) setTanggalSelesai(e.target.value);
+                      }}
+                      className="w-full px-2.5 py-2 rounded-xl t-input font-mono-num"
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="cprj-jam-mulai" className="block t-field-label mb-1">
+                      Jam Berangkat *
+                    </label>
+                    <input
+                      id="cprj-jam-mulai"
+                      type="time"
+                      required
+                      value={jamMulai}
+                      onChange={(e) => setJamMulai(e.target.value)}
+                      className="w-full px-2.5 py-2 rounded-xl t-input font-mono-num"
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="cprj-tgl-selesai" className="block t-field-label mb-1">
+                      Tgl Selesai *
+                    </label>
+                    <input
+                      id="cprj-tgl-selesai"
+                      type="date"
+                      required
+                      value={tanggalSelesai}
+                      onChange={(e) => setTanggalSelesai(e.target.value)}
+                      className="w-full px-2.5 py-2 rounded-xl t-input font-mono-num"
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="cprj-jam-selesai" className="block t-field-label mb-1">
+                      Jam Selesai *
+                    </label>
+                    <input
+                      id="cprj-jam-selesai"
+                      type="time"
+                      required
+                      value={jamSelesai}
+                      onChange={(e) => setJamSelesai(e.target.value)}
+                      className="w-full px-2.5 py-2 rounded-xl t-input font-mono-num"
+                    />
+                  </div>
+                </div>
+
+                {/* Tahap Lokasi Muat */}
+                <div className="pt-2 border-t t-border space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[11px] font-bold uppercase tracking-wider t-muted">
+                      Tahap Lokasi Muat (Penghasil Limbah)
+                    </span>
+                    {formatDurationBadge(waktuMuatMulai, waktuMuatSelesai) && (
+                      <span className="text-[11px] font-mono-num font-semibold t-muted">
+                        Durasi Muat: {formatDurationBadge(waktuMuatMulai, waktuMuatSelesai)}
+                      </span>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div>
+                      <label htmlFor="cprj-tiba-muat" className="block t-field-label mb-1">
+                        Waktu Tiba (Lokasi Muat)
+                      </label>
+                      <input
+                        id="cprj-tiba-muat"
+                        type="time"
+                        value={waktuTibaMuat}
+                        onChange={(e) => setWaktuTibaMuat(e.target.value)}
+                        className="w-full px-2.5 py-2 rounded-xl t-input font-mono-num"
+                      />
+                    </div>
+                    <div>
+                      <label htmlFor="cprj-muat-mulai" className="block t-field-label mb-1">
+                        Waktu Mulai Muat
+                      </label>
+                      <input
+                        id="cprj-muat-mulai"
+                        type="time"
+                        value={waktuMuatMulai}
+                        onChange={(e) => setWaktuMuatMulai(e.target.value)}
+                        className="w-full px-2.5 py-2 rounded-xl t-input font-mono-num"
+                      />
+                    </div>
+                    <div>
+                      <label htmlFor="cprj-muat-selesai" className="block t-field-label mb-1">
+                        Waktu Selesai Muat
+                      </label>
+                      <input
+                        id="cprj-muat-selesai"
+                        type="time"
+                        value={waktuMuatSelesai}
+                        onChange={(e) => setWaktuMuatSelesai(e.target.value)}
+                        className="w-full px-2.5 py-2 rounded-xl t-input font-mono-num"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Tahap Lokasi Bongkar */}
+                <div className="pt-2 border-t t-border space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[11px] font-bold uppercase tracking-wider t-muted">
+                      Tahap Lokasi Bongkar (Pengolah / TPA)
+                    </span>
+                    {formatDurationBadge(waktuBongkarMulai, waktuBongkarSelesai) && (
+                      <span className="text-[11px] font-mono-num font-semibold t-muted">
+                        Durasi Bongkar: {formatDurationBadge(waktuBongkarMulai, waktuBongkarSelesai)}
+                      </span>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div>
+                      <label htmlFor="cprj-tiba-bongkar" className="block t-field-label mb-1">
+                        Waktu Tiba (Lokasi Bongkar)
+                      </label>
+                      <input
+                        id="cprj-tiba-bongkar"
+                        type="time"
+                        value={waktuTibaBongkar}
+                        onChange={(e) => setWaktuTibaBongkar(e.target.value)}
+                        className="w-full px-2.5 py-2 rounded-xl t-input font-mono-num"
+                      />
+                    </div>
+                    <div>
+                      <label htmlFor="cprj-bongkar-mulai" className="block t-field-label mb-1">
+                        Waktu Mulai Bongkar
+                      </label>
+                      <input
+                        id="cprj-bongkar-mulai"
+                        type="time"
+                        value={waktuBongkarMulai}
+                        onChange={(e) => setWaktuBongkarMulai(e.target.value)}
+                        className="w-full px-2.5 py-2 rounded-xl t-input font-mono-num"
+                      />
+                    </div>
+                    <div>
+                      <label htmlFor="cprj-bongkar-selesai" className="block t-field-label mb-1">
+                        Waktu Selesai Bongkar
+                      </label>
+                      <input
+                        id="cprj-bongkar-selesai"
+                        type="time"
+                        value={waktuBongkarSelesai}
+                        onChange={(e) => setWaktuBongkarSelesai(e.target.value)}
+                        className="w-full px-2.5 py-2 rounded-xl t-input font-mono-num"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Bagian 4: Tarif & Catatan */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label htmlFor="cprj-tarif" className="block t-field-label mb-1">
-                    Tarif (Rp) {matchedTarifId ? '· Cocok Master Tarif' : ''}
+                    Tarif Angkutan (Rp) {matchedTarifId ? '· Cocok Master Tarif' : ''}
                   </label>
                   <div className="relative">
                     <span className="absolute left-3 top-1/2 -translate-y-1/2 font-bold t-muted">
@@ -1194,14 +1614,14 @@ export function PerjalananPage({
 
                 <div>
                   <label htmlFor="cprj-catatan" className="block t-field-label mb-1">
-                    Catatan (Opsional)
+                    Catatan Khusus / Safety APD (Opsional)
                   </label>
                   <input
                     id="cprj-catatan"
                     type="text"
                     value={catatan}
                     onChange={(e) => setCatatan(e.target.value)}
-                    placeholder="Surat jalan, jenis muatan, dll."
+                    placeholder="Wajib APD lengkap, segel terpal, tiket timbang"
                     className="w-full px-3 py-2 rounded-xl t-input"
                   />
                 </div>

@@ -851,24 +851,6 @@ export function UangJalanPage({
   // DAFTAR UANG JALAN VIEW
   return (
     <section className="space-y-5">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div className="flex items-start gap-3">
-          <div className="w-11 h-11 rounded-xl t-subtle border t-border flex items-center justify-center shrink-0">
-            <ArmadaMenuIcon id="armada-uang-jalan" size={30} />
-          </div>
-          <div>
-            <h2 className="text-base sm:text-lg font-display font-bold t-text leading-snug">
-              Uang Jalan Perjalanan
-            </h2>
-            <p className="text-xs t-muted mt-0.5 max-w-2xl">
-              Kelola alur uang jalan mulai dari <b>Diajukan</b> (Admin Armada), <b>Dicairkan</b>{' '}
-              (Finance &rarr; tercatat otomatis di Kas &amp; Tonase), <b>Dipertanggungjawabkan</b>,
-              hingga <b>Selesai</b>. Pengajuan baru dimulai dari tombol <b>Ajukan Uang Jalan</b> pada
-              Detail Perjalanan.
-            </p>
-          </div>
-        </div>
-      </div>
 
       {/* 4 Stage KPI Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">

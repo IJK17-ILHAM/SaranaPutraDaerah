@@ -1,12 +1,21 @@
-import { Edit3, History, Search, Trash2 } from 'lucide-react';
+import { Download, Edit3, History, Search, Trash2, Upload } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { PageHeader } from '../../components/common/PageHeader';
+import {
+  KtMasterImportModal,
+  type KtMasterImportExecutionResult,
+} from '../../components/kasTonase/KtMasterImportModal';
 import { MitraDetailModal } from '../../components/kasTonase/MitraDetailModal';
 import { NotaDetailModal } from '../../components/kasTonase/NotaDetailModal';
 import { useApp } from '../../context/AppContext';
 import { useKasTonase } from '../../context/KasTonaseContext';
 import type { KtCustomer, KtTransaction } from '../../types/kasTonase';
 import { formatRupiah } from '../../utils/format';
+import {
+  downloadKtMasterTemplate,
+  parseKtMasterWorkbook,
+  type KtMasterTabKey,
+} from '../../utils/ktMasterSpreadsheet';
 
 export function KtCustomerPage() {
   const { requestConfirm, setActiveMenu } = useApp();
@@ -16,8 +25,10 @@ export function KtCustomerPage() {
     deleteCustomer,
     getCustomerOutstanding,
     setEditingTransaction,
+    importKtMasterBatch,
   } = useKasTonase();
 
+  const [importModalOpen, setImportModalOpen] = useState(false);
   const [editId, setEditId] = useState('');
   const [nama, setNama] = useState('');
   const [tipe, setTipe] = useState('Supplier & Buyer');
@@ -104,6 +115,33 @@ export function KtCustomerPage() {
     setActiveMenu('menu-kt-transaksi');
   };
 
+  const handleImportFile = async (
+    file: File,
+    preferredTab: KtMasterTabKey | 'all',
+  ): Promise<KtMasterImportExecutionResult | null> => {
+    const parsed = await parseKtMasterWorkbook(file, preferredTab);
+    if (parsed.tabsFound.length === 0) {
+      return {
+        barangImported: 0,
+        customersImported: 0,
+        tabsFound: [],
+        skipped: parsed.skipped,
+        warnings: parsed.warnings,
+      };
+    }
+    const { barangImported, customersImported } = importKtMasterBatch({
+      barang: parsed.barang,
+      customers: parsed.customers,
+    });
+    return {
+      barangImported,
+      customersImported,
+      tabsFound: parsed.tabsFound,
+      skipped: parsed.skipped,
+      warnings: parsed.warnings,
+    };
+  };
+
   return (
     <section className="space-y-5">
       <PageHeader
@@ -111,6 +149,28 @@ export function KtCustomerPage() {
         pageLabel="Customer"
         title="Customer & Supplier"
         subtitle="Data mitra, riwayat nota & cicilan, serta pemisahan saldo Utang Mitra ke Kita dan Utang Kita ke Mitra."
+        actions={
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => downloadKtMasterTemplate('customer')}
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl t-btn-secondary text-xs font-semibold whitespace-nowrap"
+              title="Unduh template Excel Customer & Supplier"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span>Template</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setImportModalOpen(true)}
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl t-btn-primary text-xs font-semibold whitespace-nowrap"
+              title="Impor data Customer & Supplier dari file Excel/CSV"
+            >
+              <Upload className="w-3.5 h-3.5" />
+              <span>Impor Excel</span>
+            </button>
+          </div>
+        }
       />
 
       {/* Summary Cards: Two Explicitly Separated Balances */}
@@ -367,6 +427,13 @@ export function KtCustomerPage() {
         transaction={detailNota}
         onClose={() => setDetailNota(null)}
         onEdit={handleEditNota}
+      />
+
+      <KtMasterImportModal
+        open={importModalOpen}
+        tabKey="customer"
+        onClose={() => setImportModalOpen(false)}
+        onImportFile={handleImportFile}
       />
     </section>
   );

@@ -4,12 +4,15 @@ import type {
   ArmadaDasarTarif,
   ArmadaJenisLokasi,
   ArmadaLokasi,
+  ArmadaMenuId,
   ArmadaPelanggan,
   ArmadaTarif,
   ArmadaUnit,
   ArmadaUnitStatus,
 } from '../types/armada';
 import { cleanRupiahToNumber, getTodayISO, normalizeDateISO } from './format';
+
+export type MasterDataTabKey = 'units' | 'pelanggan' | 'lokasi' | 'tarif';
 
 export interface SpsArmadaDataset {
   units: ArmadaUnit[];
@@ -26,7 +29,307 @@ export interface SpsArmadaImportResult {
     tarif: number;
     units: number;
   };
+  skipped: number;
+  warnings: string[];
   tabsFound: string[];
+}
+
+export const MASTER_DATA_TEMPLATE_META: Record<
+  MasterDataTabKey,
+  {
+    label: string;
+    sheetName: string;
+    menuId: ArmadaMenuId;
+    requiredCols: string[];
+    optionalCols: string[];
+    tip: string;
+  }
+> = {
+  units: {
+    label: 'Unit Armada',
+    sheetName: 'Unit Armada',
+    menuId: 'armada-master-unit',
+    requiredCols: ['Nomor Polisi', 'Jenis Kendaraan'],
+    optionalCols: [
+      'Kode Unit (otomatis jika kosong)',
+      'Merek',
+      'Model',
+      'Tahun',
+      'Nomor Rangka',
+      'Nomor Mesin',
+      'Supir Utama',
+      'Status (Aktif / Nonaktif)',
+      'Catatan',
+    ],
+    tip: 'Jika Kode Unit atau Nomor Polisi sudah ada, data unit akan diperbarui otomatis tanpa duplikat.',
+  },
+  pelanggan: {
+    label: 'Pelanggan',
+    sheetName: 'Pelanggan',
+    menuId: 'armada-master-pelanggan',
+    requiredCols: ['Nama PT'],
+    optionalCols: [
+      'ID Pelanggan (otomatis jika kosong)',
+      'PIC',
+      'Kontak',
+      'Status (Aktif / Nonaktif)',
+      'Catatan',
+    ],
+    tip: 'Impor Pelanggan terlebih dahulu sebelum mengimpor Lokasi dan Tarif, atau gunakan Template 4 Tab sekaligus.',
+  },
+  lokasi: {
+    label: 'Lokasi Muat–Bongkar',
+    sheetName: 'Lokasi',
+    menuId: 'armada-master-lokasi',
+    requiredCols: ['ID Pelanggan / Pelanggan', 'Nama Lokasi'],
+    optionalCols: [
+      'ID Lokasi (otomatis jika kosong)',
+      'Alamat Lengkap',
+      'Jenis Lokasi (Muat / Bongkar / Keduanya)',
+      'Status (Aktif / Nonaktif)',
+      'Catatan',
+    ],
+    tip: 'Pastikan ID Pelanggan atau Nama PT di kolom Pelanggan sesuai dengan Master Pelanggan.',
+  },
+  tarif: {
+    label: 'Tarif Angkutan',
+    sheetName: 'Tarif',
+    menuId: 'armada-master-tarif',
+    requiredCols: [
+      'ID Pelanggan / Pelanggan',
+      'Lokasi Muat',
+      'Lokasi Bongkar',
+      'Jenis Kendaraan',
+      'Nominal',
+    ],
+    optionalCols: [
+      'ID Tarif (otomatis jika kosong)',
+      'Dasar Tarif (Per Rit / Trip, Per Ton, Per Kg, Per Km, Per Hari, Borongan)',
+      'Tanggal Mulai Berlaku (YYYY-MM-DD)',
+      'Status (Aktif / Nonaktif)',
+      'Catatan',
+    ],
+    tip: 'Lokasi Muat dan Lokasi Bongkar dicocokkan berdasarkan ID Lokasi atau Nama Lokasi milik pelanggan tersebut.',
+  },
+};
+
+function buildUnitWorksheet(rows: Record<string, unknown>[]): XLSX.WorkSheet {
+  const ws = XLSX.utils.json_to_sheet(rows);
+  ws['!cols'] = [
+    { wch: 14 },
+    { wch: 15 },
+    { wch: 18 },
+    { wch: 14 },
+    { wch: 18 },
+    { wch: 8 },
+    { wch: 22 },
+    { wch: 18 },
+    { wch: 18 },
+    { wch: 11 },
+    { wch: 30 },
+  ];
+  return ws;
+}
+
+function buildPelangganWorksheet(rows: Record<string, unknown>[]): XLSX.WorkSheet {
+  const ws = XLSX.utils.json_to_sheet(rows);
+  ws['!cols'] = [
+    { wch: 14 },
+    { wch: 30 },
+    { wch: 20 },
+    { wch: 20 },
+    { wch: 11 },
+    { wch: 34 },
+  ];
+  return ws;
+}
+
+function buildLokasiWorksheet(rows: Record<string, unknown>[]): XLSX.WorkSheet {
+  const ws = XLSX.utils.json_to_sheet(rows);
+  ws['!cols'] = [
+    { wch: 12 },
+    { wch: 14 },
+    { wch: 28 },
+    { wch: 26 },
+    { wch: 46 },
+    { wch: 14 },
+    { wch: 11 },
+    { wch: 30 },
+  ];
+  return ws;
+}
+
+function buildTarifWorksheet(rows: Record<string, unknown>[]): XLSX.WorkSheet {
+  const ws = XLSX.utils.json_to_sheet(rows);
+  ws['!cols'] = [
+    { wch: 12 },
+    { wch: 14 },
+    { wch: 26 },
+    { wch: 15 },
+    { wch: 24 },
+    { wch: 17 },
+    { wch: 24 },
+    { wch: 18 },
+    { wch: 16 },
+    { wch: 15 },
+    { wch: 20 },
+    { wch: 11 },
+    { wch: 30 },
+  ];
+  return ws;
+}
+
+function buildGuideWorksheet(target: MasterDataTabKey | 'all'): XLSX.WorkSheet {
+  const guideRows: Array<Record<string, string>> = [
+    {
+      Bagian: 'ATURAN UMUM',
+      Keterangan:
+        'Jangan ubah nama kolom header di baris pertama. Hapus atau timpa baris contoh sebelum melakukan impor.',
+    },
+    {
+      Bagian: 'FORMAT FILE',
+      Keterangan: 'Mendukung file Excel (.xlsx / .xls) dan CSV (.csv).',
+    },
+    {
+      Bagian: 'URUTAN DATA',
+      Keterangan:
+        'Jika memakai Template 4 Tab sekaligus, sistem otomatis memproses urutan: Unit Armada -> Pelanggan -> Lokasi -> Tarif.',
+    },
+  ];
+
+  if (target === 'all' || target === 'units') {
+    guideRows.push({
+      Bagian: 'TAB: Unit Armada',
+      Keterangan:
+        'Wajib: Nomor Polisi, Jenis Kendaraan. Kode Unit boleh dikosongkan (otomatis ARM-001, dst). Status: Aktif / Nonaktif.',
+    });
+  }
+  if (target === 'all' || target === 'pelanggan') {
+    guideRows.push({
+      Bagian: 'TAB: Pelanggan',
+      Keterangan:
+        'Wajib: Nama PT. ID Pelanggan boleh dikosongkan (otomatis PLG-001, dst). Status: Aktif / Nonaktif.',
+    });
+  }
+  if (target === 'all' || target === 'lokasi') {
+    guideRows.push({
+      Bagian: 'TAB: Lokasi',
+      Keterangan:
+        'Wajib: ID Pelanggan atau Nama PT (kolom Pelanggan), dan Nama Lokasi. Jenis Lokasi: Muat / Bongkar / Keduanya.',
+    });
+  }
+  if (target === 'all' || target === 'tarif') {
+    guideRows.push({
+      Bagian: 'TAB: Tarif',
+      Keterangan:
+        'Wajib: Pelanggan, Lokasi Muat, Lokasi Bongkar, Jenis Kendaraan, Nominal (angka saja, misal 1650000). Dasar Tarif: Per Rit / Trip, Per Ton, Per Kg, Per Km, Per Hari, atau Borongan.',
+    });
+  }
+
+  const ws = XLSX.utils.json_to_sheet(guideRows);
+  ws['!cols'] = [{ wch: 22 }, { wch: 96 }];
+  return ws;
+}
+
+/**
+ * Downloads a clean, ready-to-fill Excel (.xlsx) import template for either
+ * a single Master Data tab or all 4 Master Data tabs combined.
+ */
+export function downloadMasterDataTemplate(target: MasterDataTabKey | 'all' = 'all'): void {
+  const wb = XLSX.utils.book_new();
+  const today = getTodayISO();
+
+  if (target === 'all' || target === 'units') {
+    const wsUnit = buildUnitWorksheet([
+      {
+        'Kode Unit': 'ARM-001',
+        'Nomor Polisi': 'B 9001 SPD',
+        'Jenis Kendaraan': 'Wingbox',
+        Merek: 'Hino',
+        Model: 'Dutro 130 HD',
+        Tahun: '2024',
+        'Nomor Rangka': 'MJEC1JG43P5009001',
+        'Nomor Mesin': 'W04DTRJ90011',
+        'Supir Utama': '',
+        Status: 'Aktif',
+        Catatan: 'Contoh baris — timpa atau hapus sebelum impor',
+      },
+    ]);
+    XLSX.utils.book_append_sheet(wb, wsUnit, 'Unit Armada');
+  }
+
+  if (target === 'all' || target === 'pelanggan') {
+    const wsPelanggan = buildPelangganWorksheet([
+      {
+        'ID Pelanggan': 'PLG-001',
+        'Nama PT': 'PT Contoh Logistik Nusantara',
+        PIC: 'Budi Santoso',
+        Kontak: '0812-3456-7890',
+        Status: 'Aktif',
+        Catatan: 'Contoh baris — timpa atau hapus sebelum impor',
+      },
+    ]);
+    XLSX.utils.book_append_sheet(wb, wsPelanggan, 'Pelanggan');
+  }
+
+  if (target === 'all' || target === 'lokasi') {
+    const wsLokasi = buildLokasiWorksheet([
+      {
+        'ID Lokasi': 'LOK-001',
+        'ID Pelanggan': 'PLG-001',
+        Pelanggan: 'PT Contoh Logistik Nusantara',
+        'Nama Lokasi': 'Gudang Muat Cikarang',
+        'Alamat Lengkap': 'Kawasan Industri Jababeka Blok C-14, Cikarang, Bekasi',
+        'Jenis Lokasi': 'Muat',
+        Status: 'Aktif',
+        Catatan: 'Contoh baris — timpa atau hapus sebelum impor',
+      },
+      {
+        'ID Lokasi': 'LOK-002',
+        'ID Pelanggan': 'PLG-001',
+        Pelanggan: 'PT Contoh Logistik Nusantara',
+        'Nama Lokasi': 'Lokasi Bongkar Bekasi',
+        'Alamat Lengkap': 'Jl. Raya Narogong KM 11, Kota Bekasi',
+        'Jenis Lokasi': 'Bongkar',
+        Status: 'Aktif',
+        Catatan: 'Contoh baris — timpa atau hapus sebelum impor',
+      },
+    ]);
+    XLSX.utils.book_append_sheet(wb, wsLokasi, 'Lokasi');
+  }
+
+  if (target === 'all' || target === 'tarif') {
+    const wsTarif = buildTarifWorksheet([
+      {
+        'ID Tarif': 'TRF-001',
+        'ID Pelanggan': 'PLG-001',
+        Pelanggan: 'PT Contoh Logistik Nusantara',
+        'ID Lokasi Muat': 'LOK-001',
+        'Lokasi Muat': 'Gudang Muat Cikarang',
+        'ID Lokasi Bongkar': 'LOK-002',
+        'Lokasi Bongkar': 'Lokasi Bongkar Bekasi',
+        'Jenis Kendaraan': 'Wingbox',
+        'Dasar Tarif': 'Per Rit / Trip',
+        Nominal: 1650000,
+        'Tanggal Mulai Berlaku': today,
+        Status: 'Aktif',
+        Catatan: 'Contoh baris — timpa atau hapus sebelum impor',
+      },
+    ]);
+    XLSX.utils.book_append_sheet(wb, wsTarif, 'Tarif');
+  }
+
+  XLSX.utils.book_append_sheet(wb, buildGuideWorksheet(target), 'Panduan Pengisian');
+
+  const filenameMap: Record<MasterDataTabKey | 'all', string> = {
+    all: 'Template_Master_Data_Armada_PT_SPD.xlsx',
+    units: 'Template_Unit_Armada_PT_SPD.xlsx',
+    pelanggan: 'Template_Pelanggan_Armada_PT_SPD.xlsx',
+    lokasi: 'Template_Lokasi_Armada_PT_SPD.xlsx',
+    tarif: 'Template_Tarif_Armada_PT_SPD.xlsx',
+  };
+
+  XLSX.writeFile(wb, filenameMap[target]);
 }
 
 /**
@@ -51,10 +354,11 @@ export function exportSpsArmadaWorkbook(data: SpsArmadaDataset): void {
     Tahun: u.tahun || '',
     'Nomor Rangka': u.nomorRangka || '',
     'Nomor Mesin': u.nomorMesin || '',
+    'Supir Utama': u.supirUtama || '',
     Status: u.status,
     Catatan: u.catatan || '',
   }));
-  const wsUnit = XLSX.utils.json_to_sheet(
+  const wsUnit = buildUnitWorksheet(
     unitRows.length > 0
       ? unitRows
       : [
@@ -67,23 +371,12 @@ export function exportSpsArmadaWorkbook(data: SpsArmadaDataset): void {
             Tahun: '',
             'Nomor Rangka': '',
             'Nomor Mesin': '',
+            'Supir Utama': '',
             Status: 'Aktif',
             Catatan: '',
           },
         ],
   );
-  wsUnit['!cols'] = [
-    { wch: 14 },
-    { wch: 15 },
-    { wch: 18 },
-    { wch: 14 },
-    { wch: 18 },
-    { wch: 8 },
-    { wch: 22 },
-    { wch: 18 },
-    { wch: 11 },
-    { wch: 30 },
-  ];
   XLSX.utils.book_append_sheet(wb, wsUnit, 'Unit Armada');
 
   // Tab 2: Pelanggan
@@ -95,13 +388,13 @@ export function exportSpsArmadaWorkbook(data: SpsArmadaDataset): void {
     Status: p.status,
     Catatan: p.catatan || '',
   }));
-  const wsPelanggan = XLSX.utils.json_to_sheet(
+  const wsPelanggan = buildPelangganWorksheet(
     pelangganRows.length > 0
       ? pelangganRows
       : [
           {
-            'ID Pelanggan': 'PLG-001',
-            'Nama PT': 'PT Demo Logistik',
+            'ID Pelanggan': '',
+            'Nama PT': '',
             PIC: '',
             Kontak: '',
             Status: 'Aktif',
@@ -109,14 +402,6 @@ export function exportSpsArmadaWorkbook(data: SpsArmadaDataset): void {
           },
         ],
   );
-  wsPelanggan['!cols'] = [
-    { wch: 14 },
-    { wch: 30 },
-    { wch: 20 },
-    { wch: 20 },
-    { wch: 11 },
-    { wch: 34 },
-  ];
   XLSX.utils.book_append_sheet(wb, wsPelanggan, 'Pelanggan');
 
   // Tab 3: Lokasi
@@ -133,15 +418,15 @@ export function exportSpsArmadaWorkbook(data: SpsArmadaDataset): void {
       Catatan: l.catatan || '',
     };
   });
-  const wsLokasi = XLSX.utils.json_to_sheet(
+  const wsLokasi = buildLokasiWorksheet(
     lokasiRows.length > 0
       ? lokasiRows
       : [
           {
-            'ID Lokasi': 'LOK-001',
-            'ID Pelanggan': 'PLG-001',
-            Pelanggan: 'PT Demo Logistik',
-            'Nama Lokasi': 'Gudang Muat Cikarang',
+            'ID Lokasi': '',
+            'ID Pelanggan': '',
+            Pelanggan: '',
+            'Nama Lokasi': '',
             'Alamat Lengkap': '',
             'Jenis Lokasi': 'Muat',
             Status: 'Aktif',
@@ -149,16 +434,6 @@ export function exportSpsArmadaWorkbook(data: SpsArmadaDataset): void {
           },
         ],
   );
-  wsLokasi['!cols'] = [
-    { wch: 12 },
-    { wch: 14 },
-    { wch: 28 },
-    { wch: 26 },
-    { wch: 46 },
-    { wch: 14 },
-    { wch: 11 },
-    { wch: 30 },
-  ];
   XLSX.utils.book_append_sheet(wb, wsLokasi, 'Lokasi');
 
   // Tab 4: Tarif
@@ -182,42 +457,27 @@ export function exportSpsArmadaWorkbook(data: SpsArmadaDataset): void {
       Catatan: t.catatan || '',
     };
   });
-  const wsTarif = XLSX.utils.json_to_sheet(
+  const wsTarif = buildTarifWorksheet(
     tarifRows.length > 0
       ? tarifRows
       : [
           {
-            'ID Tarif': 'TRF-001',
-            'ID Pelanggan': 'PLG-001',
-            Pelanggan: 'PT Demo Logistik',
-            'ID Lokasi Muat': 'LOK-001',
-            'Lokasi Muat': 'Gudang Muat Cikarang',
-            'ID Lokasi Bongkar': 'LOK-002',
-            'Lokasi Bongkar': 'Lokasi Bongkar Bekasi',
-            'Jenis Kendaraan': 'Wingbox',
+            'ID Tarif': '',
+            'ID Pelanggan': '',
+            Pelanggan: '',
+            'ID Lokasi Muat': '',
+            'Lokasi Muat': '',
+            'ID Lokasi Bongkar': '',
+            'Lokasi Bongkar': '',
+            'Jenis Kendaraan': '',
             'Dasar Tarif': 'Per Rit / Trip',
-            Nominal: 1650000,
+            Nominal: 0,
             'Tanggal Mulai Berlaku': getTodayISO(),
             Status: 'Aktif',
             Catatan: '',
           },
         ],
   );
-  wsTarif['!cols'] = [
-    { wch: 12 },
-    { wch: 14 },
-    { wch: 26 },
-    { wch: 15 },
-    { wch: 24 },
-    { wch: 17 },
-    { wch: 24 },
-    { wch: 18 },
-    { wch: 16 },
-    { wch: 15 },
-    { wch: 20 },
-    { wch: 11 },
-    { wch: 30 },
-  ];
   XLSX.utils.book_append_sheet(wb, wsTarif, 'Tarif');
 
   const today = getTodayISO().replace(/-/g, '');
@@ -239,6 +499,10 @@ function getField(row: Record<string, unknown>, candidates: string[]): string {
     }
   }
   return '';
+}
+
+function isCompletelyEmptyRow(row: Record<string, unknown>): boolean {
+  return Object.values(row).every((v) => v === undefined || v === null || String(v).trim() === '');
 }
 
 function normalizeStatus(raw: string): ArmadaUnitStatus {
@@ -265,12 +529,15 @@ function normalizeDasarTarif(raw: string): ArmadaDasarTarif {
 }
 
 /**
- * Imports/merges data from an uploaded SPS Armada Excel workbook (.xlsx / .xls)
- * supporting tabs: Pelanggan, Lokasi, Tarif, and Unit Armada.
+ * Imports/merges data from an uploaded Master Data Excel/CSV file (.xlsx / .xls / .csv)
+ * supporting tabs: Unit Armada, Pelanggan, Lokasi, and Tarif.
+ * When `preferredTab` is provided and the workbook uses a generic first sheet name (e.g. Sheet1 / CSV),
+ * automatically maps the first worksheet to that Master Data tab.
  */
 export async function importSpsArmadaWorkbook(
   file: File,
   current: SpsArmadaDataset,
+  preferredTab: MasterDataTabKey | 'all' = 'all',
 ): Promise<SpsArmadaImportResult> {
   const buf = await file.arrayBuffer();
   const wb = XLSX.read(buf, { type: 'array' });
@@ -286,46 +553,97 @@ export async function importSpsArmadaWorkbook(
     return null;
   };
 
-  let nextUnits = [...current.units];
-  let nextPelanggan = [...current.pelanggan];
-  let nextLokasi = [...current.lokasi];
-  let nextTarif = [...current.tarif];
+  let wsUnit = findSheet(['Unit Armada', 'Unit', 'Armada', 'Master Unit']);
+  let wsPelanggan = findSheet(['Pelanggan', 'Customer', 'Master Pelanggan']);
+  let wsLokasi = findSheet(['Lokasi', 'Lokasi Muat-Bongkar', 'Lokasi Muat Bongkar', 'Master Lokasi']);
+  let wsTarif = findSheet(['Tarif', 'Master Tarif', 'Tarif Angkutan']);
+
+  // Single-sheet fallback (e.g., CSV or custom sheet name like Sheet1) when importing from a specific tab
+  const nonGuideSheets = wb.SheetNames.filter(
+    (sn) => !sn.trim().toLowerCase().includes('panduan'),
+  );
+  if (
+    preferredTab !== 'all' &&
+    !wsUnit &&
+    !wsPelanggan &&
+    !wsLokasi &&
+    !wsTarif &&
+    nonGuideSheets.length > 0
+  ) {
+    const firstSheet = wb.Sheets[nonGuideSheets[0]];
+    if (preferredTab === 'units') wsUnit = firstSheet;
+    if (preferredTab === 'pelanggan') wsPelanggan = firstSheet;
+    if (preferredTab === 'lokasi') wsLokasi = firstSheet;
+    if (preferredTab === 'tarif') wsTarif = firstSheet;
+  }
+
+  const nextUnits = [...current.units];
+  const nextPelanggan = [...current.pelanggan];
+  const nextLokasi = [...current.lokasi];
+  const nextTarif = [...current.tarif];
 
   const counts = { pelanggan: 0, lokasi: 0, tarif: 0, units: 0 };
   const tabsFound: string[] = [];
+  const warnings: string[] = [];
+  let skipped = 0;
 
-  // 1. Unit Armada tab (optional)
-  const wsUnit = findSheet(['Unit Armada', 'Unit', 'Armada']);
+  const pushWarning = (msg: string) => {
+    if (warnings.length < 6) warnings.push(msg);
+  };
+
+  // 1. Unit Armada tab
   if (wsUnit) {
     tabsFound.push('Unit Armada');
     const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(wsUnit, { defval: '' });
-    for (const row of rows) {
-      const kodeUnit = getField(row, ['Kode Unit', 'Kode']).toUpperCase();
-      const nomorPolisi = getField(row, ['Nomor Polisi', 'No Polisi', 'Nopol'])
+    rows.forEach((row, idxRow) => {
+      if (isCompletelyEmptyRow(row)) return;
+      const nomorPolisi = getField(row, ['Nomor Polisi', 'No Polisi', 'Nopol', 'Plat'])
         .toUpperCase()
         .replace(/\s+/g, ' ');
-      const jenisKendaraan = getField(row, ['Jenis Kendaraan', 'Jenis']);
-      if (!kodeUnit || !nomorPolisi || !jenisKendaraan) continue;
+      const jenisKendaraan = getField(row, ['Jenis Kendaraan', 'Jenis', 'Tipe Kendaraan']);
+      if (!nomorPolisi || !jenisKendaraan) {
+        skipped += 1;
+        pushWarning(
+          `Unit Armada baris ${idxRow + 2}: Nomor Polisi dan Jenis Kendaraan wajib diisi.`,
+        );
+        return;
+      }
+
+      let kodeUnit = getField(row, ['Kode Unit', 'Kode']).toUpperCase();
+      if (!kodeUnit) {
+        kodeUnit = generateNextArmadaCode(
+          'ARM',
+          nextUnits.map((u) => u.kodeUnit),
+        );
+      }
 
       const idx = nextUnits.findIndex(
-        (u) => u.kodeUnit.toUpperCase() === kodeUnit,
+        (u) =>
+          u.kodeUnit.toUpperCase() === kodeUnit ||
+          u.nomorPolisi.toUpperCase().replace(/\s+/g, ' ') === nomorPolisi,
       );
       const status = normalizeStatus(getField(row, ['Status']));
+      const supirUtama = getField(row, ['Supir Utama', 'Sopir Utama', 'Supir', 'Sopir']);
       const baseFields = {
         kodeUnit,
         nomorPolisi,
         jenisKendaraan,
-        merek: getField(row, ['Merek']),
+        merek: getField(row, ['Merek', 'Merk']),
         model: getField(row, ['Model', 'Tipe']),
         tahun: getField(row, ['Tahun']).replace(/\D/g, '').slice(0, 4),
         nomorRangka: getField(row, ['Nomor Rangka', 'No Rangka', 'VIN']).toUpperCase(),
         nomorMesin: getField(row, ['Nomor Mesin', 'No Mesin']).toUpperCase(),
+        supirUtama: supirUtama || undefined,
         status,
         catatan: getField(row, ['Catatan']),
         updatedAt: now,
       };
       if (idx >= 0) {
-        nextUnits[idx] = { ...nextUnits[idx], ...baseFields };
+        nextUnits[idx] = {
+          ...nextUnits[idx],
+          ...baseFields,
+          supirUtama: supirUtama || nextUnits[idx].supirUtama,
+        };
       } else {
         nextUnits.unshift({
           id: `UNIT-${Date.now()}-${Math.random().toString(36).slice(2, 5).toUpperCase()}`,
@@ -336,17 +654,21 @@ export async function importSpsArmadaWorkbook(
         });
       }
       counts.units += 1;
-    }
+    });
   }
 
   // 2. Pelanggan tab
-  const wsPelanggan = findSheet(['Pelanggan', 'Customer', 'Master Pelanggan']);
   if (wsPelanggan) {
     tabsFound.push('Pelanggan');
     const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(wsPelanggan, { defval: '' });
-    for (const row of rows) {
+    rows.forEach((row, idxRow) => {
+      if (isCompletelyEmptyRow(row)) return;
       const namaPt = getField(row, ['Nama PT', 'Pelanggan', 'Nama Pelanggan', 'Perusahaan']);
-      if (!namaPt) continue;
+      if (!namaPt) {
+        skipped += 1;
+        pushWarning(`Pelanggan baris ${idxRow + 2}: Nama PT wajib diisi.`);
+        return;
+      }
       let idPelanggan = getField(row, ['ID Pelanggan', 'Kode Pelanggan', 'ID']).toUpperCase();
       if (!idPelanggan) {
         idPelanggan = generateNextArmadaCode(
@@ -389,17 +711,21 @@ export async function importSpsArmadaWorkbook(
         });
       }
       counts.pelanggan += 1;
-    }
+    });
   }
 
   // 3. Lokasi tab
-  const wsLokasi = findSheet(['Lokasi', 'Lokasi Muat-Bongkar', 'Lokasi Muat Bongkar']);
   if (wsLokasi) {
     tabsFound.push('Lokasi');
     const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(wsLokasi, { defval: '' });
-    for (const row of rows) {
+    rows.forEach((row, idxRow) => {
+      if (isCompletelyEmptyRow(row)) return;
       const namaLokasi = getField(row, ['Nama Lokasi', 'Lokasi']);
-      if (!namaLokasi) continue;
+      if (!namaLokasi) {
+        skipped += 1;
+        pushWarning(`Lokasi baris ${idxRow + 2}: Nama Lokasi wajib diisi.`);
+        return;
+      }
 
       const refIdPlg = getField(row, ['ID Pelanggan', 'Kode Pelanggan']).toUpperCase();
       const refNamaPlg = getField(row, ['Pelanggan', 'Nama PT', 'Nama Pelanggan']);
@@ -408,7 +734,13 @@ export async function importSpsArmadaWorkbook(
           (refIdPlg && p.idPelanggan.toUpperCase() === refIdPlg) ||
           (refNamaPlg && p.namaPt.toLowerCase() === refNamaPlg.toLowerCase()),
       );
-      if (!matchedPlg) continue;
+      if (!matchedPlg) {
+        skipped += 1;
+        pushWarning(
+          `Lokasi baris ${idxRow + 2} (${namaLokasi}): Pelanggan "${refNamaPlg || refIdPlg || '-'}" belum terdaftar di Master Pelanggan.`,
+        );
+        return;
+      }
 
       let idLokasi = getField(row, ['ID Lokasi', 'Kode Lokasi', 'ID']).toUpperCase();
       if (!idLokasi) {
@@ -455,15 +787,15 @@ export async function importSpsArmadaWorkbook(
         });
       }
       counts.lokasi += 1;
-    }
+    });
   }
 
   // 4. Tarif tab
-  const wsTarif = findSheet(['Tarif', 'Master Tarif']);
   if (wsTarif) {
     tabsFound.push('Tarif');
     const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(wsTarif, { defval: '' });
-    for (const row of rows) {
+    rows.forEach((row, idxRow) => {
+      if (isCompletelyEmptyRow(row)) return;
       const refIdPlg = getField(row, ['ID Pelanggan']).toUpperCase();
       const refNamaPlg = getField(row, ['Pelanggan', 'Nama PT', 'Nama Pelanggan']);
       const matchedPlg = nextPelanggan.find(
@@ -471,7 +803,13 @@ export async function importSpsArmadaWorkbook(
           (refIdPlg && p.idPelanggan.toUpperCase() === refIdPlg) ||
           (refNamaPlg && p.namaPt.toLowerCase() === refNamaPlg.toLowerCase()),
       );
-      if (!matchedPlg) continue;
+      if (!matchedPlg) {
+        skipped += 1;
+        pushWarning(
+          `Tarif baris ${idxRow + 2}: Pelanggan "${refNamaPlg || refIdPlg || '-'}" belum terdaftar di Master Pelanggan.`,
+        );
+        return;
+      }
 
       const refIdMuat = getField(row, ['ID Lokasi Muat']).toUpperCase();
       const refNamaMuat = getField(row, ['Lokasi Muat', 'Muat']);
@@ -495,7 +833,13 @@ export async function importSpsArmadaWorkbook(
 
       const jenisKendaraan = getField(row, ['Jenis Kendaraan', 'Kendaraan']);
       const nominal = cleanRupiahToNumber(getField(row, ['Nominal', 'Tarif', 'Harga']));
-      if (!matchedMuat || !matchedBongkar || !jenisKendaraan || nominal <= 0) continue;
+      if (!matchedMuat || !matchedBongkar || !jenisKendaraan || nominal <= 0) {
+        skipped += 1;
+        pushWarning(
+          `Tarif baris ${idxRow + 2}: pastikan Lokasi Muat, Lokasi Bongkar, Jenis Kendaraan, dan Nominal (> 0) valid.`,
+        );
+        return;
+      }
 
       let idTarif = getField(row, ['ID Tarif', 'Kode Tarif']).toUpperCase();
       if (!idTarif) {
@@ -544,7 +888,7 @@ export async function importSpsArmadaWorkbook(
         });
       }
       counts.tarif += 1;
-    }
+    });
   }
 
   return {
@@ -555,6 +899,8 @@ export async function importSpsArmadaWorkbook(
       tarif: nextTarif,
     },
     counts,
+    skipped,
+    warnings,
     tabsFound,
   };
 }

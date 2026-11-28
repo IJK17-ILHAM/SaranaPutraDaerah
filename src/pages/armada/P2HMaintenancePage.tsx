@@ -2,12 +2,16 @@ import {
   AlertCircle,
   ArrowLeft,
   ArrowRight,
+  Camera,
   CheckCircle2,
   ClipboardCheck,
+  ExternalLink,
   Eye,
+  FolderOpen,
   Lock,
   Package,
   Plus,
+  RefreshCw,
   Search,
   ShieldCheck,
   Trash2,
@@ -17,7 +21,6 @@ import {
   X,
 } from 'lucide-react';
 import { useMemo, useState } from 'react';
-import { ArmadaMenuIcon } from '../../components/armada/ArmadaMenuIcons';
 import { computePermintaanBarangStatus } from '../../data/armadaSeed';
 import type {
   ArmadaMaintenanceRequest,
@@ -283,20 +286,6 @@ export function HasilP2HPage({
 
   return (
     <section className="space-y-5">
-      <div className="flex items-start gap-3">
-        <div className="w-11 h-11 rounded-xl t-subtle border t-border flex items-center justify-center shrink-0">
-          <ArmadaMenuIcon id="armada-hasil-p2h" size={30} />
-        </div>
-        <div>
-          <h2 className="text-base sm:text-lg font-display font-bold t-text leading-snug">
-            Hasil P2H Kendaraan
-          </h2>
-          <p className="text-xs t-muted mt-0.5 max-w-2xl">
-            Tinjau checklist pemeriksaan harian yang dikirim sopir dari HP. Temuan kritis otomatis
-            menahan tombol <b>Mulai Perjalanan</b> sampai perbaikan &amp; pemeriksaan ulang selesai.
-          </p>
-        </div>
-      </div>
 
       {/* Filter Bar */}
       <div className="t-card rounded-2xl p-4 grid grid-cols-1 sm:grid-cols-12 gap-3">
@@ -484,6 +473,8 @@ interface MaintenancePageProps {
     dimintaOleh: string;
     items: Array<{ namaBarang: string; satuan: string; jumlahDiminta: number }>;
     catatan?: string;
+    fotoDataUrl?: string;
+    fotoNama?: string;
   }) => void;
   onUpdatePermintaanBarangItems: (params: {
     id: string;
@@ -550,6 +541,8 @@ export function MaintenancePage({
     { id: 'BRG-2', namaBarang: 'Pentil Ban', satuan: 'Pcs', jumlahDiminta: '1' },
   ]);
   const [barangCatatan, setBarangCatatan] = useState('');
+  const [barangFotoUrl, setBarangFotoUrl] = useState<string | undefined>(undefined);
+  const [barangFotoNama, setBarangFotoNama] = useState<string | undefined>(undefined);
   const [barangError, setBarangError] = useState('');
 
   const selectedMaint = useMemo(
@@ -1188,7 +1181,12 @@ export function MaintenancePage({
                     dimintaOleh: selectedMaint.mekanikAtauBengkel || 'Mekanik',
                     items: valid,
                     catatan: barangCatatan.trim(),
+                    fotoDataUrl: barangFotoUrl,
+                    fotoNama: barangFotoNama,
                   });
+                  setBarangFotoUrl(undefined);
+                  setBarangFotoNama(undefined);
+                  setBarangCatatan('');
                   setBarangModalOpen(false);
                 }}
                 className="p-5 overflow-y-auto space-y-4 text-xs"
@@ -1304,6 +1302,53 @@ export function MaintenancePage({
                   />
                 </div>
 
+                <div>
+                  <span className="block t-field-label mb-1">
+                    Foto Barang / Sparepart (Opsional)
+                  </span>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <label className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl t-btn-secondary font-semibold cursor-pointer">
+                      <Camera className="w-3.5 h-3.5" />
+                      <span>{barangFotoNama || 'Unggah / Ambil Foto'}</span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={async (e) => {
+                          const f = e.target.files?.[0];
+                          if (!f) return;
+                          const res = await readProofFileAsDataUrl(f);
+                          setBarangFotoUrl(res.dataUrl);
+                          setBarangFotoNama(res.name);
+                        }}
+                      />
+                    </label>
+                    {barangFotoUrl && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setBarangFotoUrl(undefined);
+                          setBarangFotoNama(undefined);
+                        }}
+                        className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl t-btn-secondary text-[11px] font-semibold text-red-600"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        <span>Hapus</span>
+                      </button>
+                    )}
+                  </div>
+                  {barangFotoUrl && (
+                    <img
+                      src={barangFotoUrl}
+                      alt="Preview foto pengajuan barang"
+                      className="mt-2 max-h-36 rounded-xl border t-border object-contain"
+                    />
+                  )}
+                  <p className="text-[11px] t-muted mt-1">
+                    Foto otomatis tersimpan di folder Google Drive <b>Pengajuan Barang</b>.
+                  </p>
+                </div>
+
                 <div className="flex justify-end gap-2 pt-3 border-t t-border">
                   <button
                     type="button"
@@ -1327,23 +1372,7 @@ export function MaintenancePage({
   // DAFTAR PENGAJUAN PERBAIKAN
   return (
     <section className="space-y-5">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div className="flex items-start gap-3">
-          <div className="w-11 h-11 rounded-xl t-subtle border t-border flex items-center justify-center shrink-0">
-            <ArmadaMenuIcon id="armada-maintenance" size={30} />
-          </div>
-          <div>
-            <h2 className="text-base sm:text-lg font-display font-bold t-text leading-snug">
-              Pengajuan Perbaikan
-            </h2>
-            <p className="text-xs t-muted mt-0.5 max-w-2xl">
-              Kelola perbaikan dari temuan P2H maupun laporan manual: <b>Diajukan</b> &rarr;{' '}
-              <b>Ditinjau</b> &rarr; <b>Dikerjakan / Menunggu Barang</b> &rarr; <b>Selesai</b> &amp;
-              pelepasan penahanan unit.
-            </p>
-          </div>
-        </div>
-
+      <div className="flex flex-wrap items-center justify-end gap-2">
         <button
           type="button"
           onClick={() => {
@@ -1639,12 +1668,30 @@ export function MaintenancePage({
 
 interface PermintaanBarangPageProps {
   permintaanBarangList: ArmadaPermintaanBarang[];
+  driveFolderUrl: string;
+  hasDirectDriveFolder?: boolean;
+  isEnsuringDriveFolder?: boolean;
+  onEnsureDriveFolder?: () => void;
   onUpdateItems: (params: { id: string; items: PermintaanBarangItem[] }) => void;
   onOpenMaintenance: (maintenanceId: string) => void;
 }
 
+function resolvePermintaanPhotoPreview(url?: string): string | null {
+  if (!url) return null;
+  if (url.startsWith('data:')) return url;
+  const match = url.match(/drive\.google\.com\/file\/d\/([^/]+)/);
+  if (match && match[1]) {
+    return `https://drive.google.com/thumbnail?id=${match[1]}&sz=w600`;
+  }
+  return url;
+}
+
 export function PermintaanBarangPage({
   permintaanBarangList,
+  driveFolderUrl,
+  hasDirectDriveFolder,
+  isEnsuringDriveFolder,
+  onEnsureDriveFolder,
   onUpdateItems,
   onOpenMaintenance,
 }: PermintaanBarangPageProps) {
@@ -1661,6 +1708,8 @@ export function PermintaanBarangPage({
             req.nomorPermintaan.toLowerCase().includes(q) ||
             req.nomorPengajuanPerbaikan.toLowerCase().includes(q) ||
             req.kodeUnit.toLowerCase().includes(q) ||
+            req.nomorPolisi.toLowerCase().includes(q) ||
+            req.dimintaOleh.toLowerCase().includes(q) ||
             req.items.some((it) => it.namaBarang.toLowerCase().includes(q));
           if (!hit) return false;
         }
@@ -1678,18 +1727,49 @@ export function PermintaanBarangPage({
 
   return (
     <section className="space-y-5">
-      <div className="flex items-start gap-3">
-        <div className="w-11 h-11 rounded-xl t-subtle border t-border flex items-center justify-center shrink-0">
-          <ArmadaMenuIcon id="armada-permintaan-barang" size={30} />
-        </div>
-        <div>
-          <h2 className="text-base sm:text-lg font-display font-bold t-text leading-snug">
-            Permintaan Barang Perbaikan
-          </h2>
-          <p className="text-xs t-muted mt-0.5 max-w-2xl">
-            Pantau jumlah diminta, disetujui, dan diterima untuk tiap barang. Jika baru sebagian
-            barang datang, status otomatis tampil <b>Terpenuhi Sebagian</b> beserta kekurangannya.
+      {/* Dedicated Google Drive Folder Banner for Pengajuan Barang */}
+      <div className="t-card rounded-2xl p-4 flex flex-wrap items-center justify-between gap-3">
+        <div className="space-y-0.5">
+          <div className="flex items-center gap-2">
+            <FolderOpen className="w-4 h-4 t-link shrink-0" />
+            <h3 className="text-xs sm:text-sm font-bold t-text">
+              Folder Google Drive Khusus: Pengajuan Barang
+            </h3>
+          </div>
+          <p className="text-[11px] t-muted">
+            Semua foto lampiran pengajuan barang dari sopir maupun mekanik otomatis tersimpan ke{' '}
+            <b>Drive Armada / Pengajuan Barang</b>.
+            {!hasDirectDriveFolder && (
+              <span> Klik Sinkron Folder untuk membuat/menghubungkan tautan folder langsung.</span>
+            )}
           </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          {onEnsureDriveFolder && (
+            <button
+              type="button"
+              disabled={isEnsuringDriveFolder}
+              onClick={onEnsureDriveFolder}
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl t-btn-secondary text-xs font-bold disabled:opacity-60"
+            >
+              <RefreshCw
+                className={`w-3.5 h-3.5 ${isEnsuringDriveFolder ? 'animate-spin' : ''}`}
+              />
+              <span>
+                {isEnsuringDriveFolder ? 'Menyiapkan...' : 'Buat / Sinkron Folder Drive'}
+              </span>
+            </button>
+          )}
+          <a
+            href={driveFolderUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl t-btn-primary text-xs font-bold"
+          >
+            <FolderOpen className="w-3.5 h-3.5" />
+            <span>Buka Folder Drive</span>
+            <ExternalLink className="w-3 h-3" />
+          </a>
         </div>
       </div>
 
@@ -1697,7 +1777,7 @@ export function PermintaanBarangPage({
       <div className="t-card rounded-2xl p-4 grid grid-cols-1 sm:grid-cols-12 gap-3">
         <div className="sm:col-span-8">
           <label htmlFor="pb-search" className="block t-field-label mb-1">
-            Cari No. Permintaan, No. Perbaikan, Unit, atau Nama Barang
+            Cari No. Permintaan, Sumber, Unit, Sopir/Pemohon, atau Nama Barang
           </label>
           <div className="relative">
             <Search className="w-3.5 h-3.5 t-muted absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
@@ -1706,7 +1786,7 @@ export function PermintaanBarangPage({
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Contoh: PB-001, MNT-001, ARM-001, Ban, Pentil..."
+              placeholder="Contoh: PB-001, Pengajuan Sopir, ARM-001, Dedi, Ban, Oli..."
               className="w-full text-xs pl-8 pr-3 py-2 rounded-xl t-input"
             />
           </div>
@@ -1732,8 +1812,8 @@ export function PermintaanBarangPage({
 
       {filteredList.length === 0 ? (
         <div className="t-card rounded-2xl p-8 text-center text-xs t-muted">
-          Belum ada permintaan barang. Buka detail <b>Pengajuan Perbaikan</b> lalu tekan{' '}
-          <b>Ajukan Barang</b>.
+          Belum ada permintaan barang. Permintaan dapat diajukan dari <b>Pengajuan Perbaikan</b>{' '}
+          atau langsung oleh sopir melalui tab <b>Ajukan Barang</b> di Mode HP Sopir.
         </div>
       ) : (
         <div className="space-y-4">
@@ -1745,13 +1825,19 @@ export function PermintaanBarangPage({
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="font-mono-num font-bold t-link">{req.nomorPermintaan}</span>
                     <span className="t-muted">&middot;</span>
-                    <button
-                      type="button"
-                      onClick={() => onOpenMaintenance(req.maintenanceId)}
-                      className="font-mono-num font-bold t-link hover:underline"
-                    >
-                      {req.nomorPengajuanPerbaikan}
-                    </button>
+                    {req.maintenanceId ? (
+                      <button
+                        type="button"
+                        onClick={() => onOpenMaintenance(req.maintenanceId)}
+                        className="font-mono-num font-bold t-link hover:underline"
+                      >
+                        {req.nomorPengajuanPerbaikan}
+                      </button>
+                    ) : (
+                      <span className="px-2 py-0.5 rounded-lg t-subtle border t-border font-semibold t-text">
+                        {req.nomorPengajuanPerbaikan || 'Pengajuan Sopir'}
+                      </span>
+                    )}
                     <span className="t-muted">&middot;</span>
                     <span className="font-mono-num font-semibold t-text">
                       {req.kodeUnit} ({req.nomorPolisi})
@@ -1759,11 +1845,62 @@ export function PermintaanBarangPage({
                     <span className="t-muted">
                       &middot; {formatDateShortID(req.tanggalPermintaan || getTodayISO())}
                     </span>
+                    <span className="t-muted">
+                      &middot; Pemohon: <strong className="t-text">{req.dimintaOleh}</strong>
+                    </span>
                   </div>
                   <span className="font-bold" style={{ color: statusColor(computed) }}>
                     {computed}
                   </span>
                 </div>
+
+                {req.catatan && (
+                  <div className="px-5 py-2.5 border-b t-border t-subtle text-[11px] t-muted">
+                    <span className="font-semibold t-text">Catatan:</span> {req.catatan}
+                  </div>
+                )}
+
+                {req.fotoDataUrl && (
+                  <div className="px-5 py-3 border-b t-border flex flex-wrap items-start gap-3">
+                    {resolvePermintaanPhotoPreview(req.fotoDataUrl) && (
+                      <img
+                        src={resolvePermintaanPhotoPreview(req.fotoDataUrl) || ''}
+                        alt={req.fotoNama || `Foto ${req.nomorPermintaan}`}
+                        className="h-24 w-32 rounded-xl border t-border object-cover shrink-0"
+                      />
+                    )}
+                    <div className="space-y-1.5 min-w-0">
+                      <div className="font-semibold t-text">
+                        Foto Pengajuan Barang
+                        {req.fotoNama ? (
+                          <span className="font-normal t-muted"> ({req.fotoNama})</span>
+                        ) : null}
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        {req.fotoDataUrl.startsWith('http') && (
+                          <a
+                            href={req.fotoDataUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg t-btn-secondary text-[11px] font-bold"
+                          >
+                            <ExternalLink className="w-3 h-3" />
+                            <span>Buka Foto di Drive</span>
+                          </a>
+                        )}
+                        <a
+                          href={req.driveFolderUrl || driveFolderUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg t-btn-secondary text-[11px] font-semibold"
+                        >
+                          <FolderOpen className="w-3 h-3" />
+                          <span>Folder Pengajuan Barang</span>
+                        </a>
+                      </div>
+                    </div>
+                  </div>
+                )}
 
                 <div className="overflow-x-auto">
                   <table className="w-full text-left text-xs">

@@ -173,6 +173,11 @@ export interface ArmadaPerjalanan {
   id: string;
   nomorPenugasan: string;
   nomorSuratJalan?: string;
+  nomorManifest?: string;
+  jenisLimbah?: string;
+  kodeLimbah?: string;
+  kemasanLimbah?: string;
+  estimasiMuatan?: string;
   unitId: string;
   sopirNama: string;
   pelangganId: string;
@@ -185,6 +190,12 @@ export interface ArmadaPerjalanan {
   jamMulai: string; // HH:mm
   tanggalSelesai: string; // YYYY-MM-DD
   jamSelesai: string; // HH:mm
+  waktuTibaMuat?: string; // HH:mm
+  waktuMuatMulai?: string; // HH:mm
+  waktuMuatSelesai?: string; // HH:mm
+  waktuTibaBongkar?: string; // HH:mm
+  waktuBongkarMulai?: string; // HH:mm
+  waktuBongkarSelesai?: string; // HH:mm
   status: ArmadaPerjalananStatus;
   tahapPerjalanan?: ArmadaPerjalananTahap;
   mulaiAktual?: string;
@@ -201,6 +212,12 @@ export interface ArmadaPerjalanan {
 export interface ArmadaPerjalananInput {
   id?: string;
   nomorPenugasan?: string;
+  nomorSuratJalan?: string;
+  nomorManifest?: string;
+  jenisLimbah?: string;
+  kodeLimbah?: string;
+  kemasanLimbah?: string;
+  estimasiMuatan?: string;
   unitId: string;
   sopirNama: string;
   pelangganId: string;
@@ -213,6 +230,12 @@ export interface ArmadaPerjalananInput {
   jamMulai: string;
   tanggalSelesai: string;
   jamSelesai: string;
+  waktuTibaMuat?: string;
+  waktuMuatMulai?: string;
+  waktuMuatSelesai?: string;
+  waktuTibaBongkar?: string;
+  waktuBongkarMulai?: string;
+  waktuBongkarSelesai?: string;
   catatan?: string;
 }
 
@@ -289,6 +312,12 @@ export interface ArmadaSewaUnit {
   jamMulai: string; // HH:mm
   tanggalSelesai: string; // YYYY-MM-DD
   jamSelesai: string; // HH:mm
+  waktuTibaMuat?: string; // HH:mm
+  waktuMuatMulai?: string; // HH:mm
+  waktuMuatSelesai?: string; // HH:mm
+  waktuTibaBongkar?: string; // HH:mm
+  waktuBongkarMulai?: string; // HH:mm
+  waktuBongkarSelesai?: string; // HH:mm
   modeSewa: SewaMode;
   namaSopir?: string;
   tarifDisepakati: number;
@@ -437,6 +466,9 @@ export interface ArmadaPermintaanBarang {
   items: PermintaanBarangItem[];
   status: PermintaanBarangStatus;
   catatan?: string;
+  fotoDataUrl?: string;
+  fotoNama?: string;
+  driveFolderUrl?: string;
   createdAt: string;
   updatedAt: string;
 }

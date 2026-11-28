@@ -3,17 +3,23 @@ import {
   ChevronDown,
   ChevronRight,
   CreditCard,
+  Download,
   FileText,
   Filter,
   History,
   Plus,
   Search,
   Trash2,
+  Upload,
   X,
 } from 'lucide-react';
 import { Fragment, useEffect, useMemo, useState } from 'react';
 import { PageHeader } from '../../components/common/PageHeader';
 import { RingkasanSpotIcon } from '../../components/common/RingkasanSpotIcons';
+import {
+  HutangImportModal,
+  type HutangImportExecutionResult,
+} from '../../components/kasTonase/HutangImportModal';
 import { NotaDetailModal } from '../../components/kasTonase/NotaDetailModal';
 import { PayDebtModal } from '../../components/kasTonase/PayDebtModal';
 import { useApp } from '../../context/AppContext';
@@ -27,6 +33,11 @@ import {
   formatRupiah,
   getTodayISO,
 } from '../../utils/format';
+import {
+  downloadHutangPiutangTemplate,
+  parseHutangPiutangWorkbook,
+  type HutangImportTabKey,
+} from '../../utils/hutangSpreadsheet';
 
 type HutangTab = 'nota' | 'mitra';
 
@@ -45,9 +56,11 @@ export function KtHutangPage() {
     payPiutangMitra,
     deletePiutangMitra,
     getSupplierDebt,
+    importHutangPiutangBatch,
   } = useKasTonase();
 
   const [activeTab, setActiveTab] = useState<HutangTab>('nota');
+  const [importModalOpen, setImportModalOpen] = useState(false);
   const [payingTrx, setPayingTrx] = useState<KtTransaction | null>(null);
   const [detailTrx, setDetailTrx] = useState<KtTransaction | null>(null);
 
@@ -241,6 +254,33 @@ export function KtHutangPage() {
     }
   };
 
+  const handleImportHutangFile = async (
+    file: File,
+    preferredTab: HutangImportTabKey | 'all',
+  ): Promise<HutangImportExecutionResult | null> => {
+    const parsed = await parseHutangPiutangWorkbook(file, preferredTab);
+    if (parsed.tabsFound.length === 0) {
+      return {
+        notasImported: 0,
+        mitrasImported: 0,
+        tabsFound: [],
+        skipped: parsed.skipped,
+        warnings: parsed.warnings,
+      };
+    }
+    const { notasImported, mitrasImported } = importHutangPiutangBatch({
+      notas: parsed.notas,
+      mitras: parsed.mitras,
+    });
+    return {
+      notasImported,
+      mitrasImported,
+      tabsFound: parsed.tabsFound,
+      skipped: parsed.skipped,
+      warnings: parsed.warnings,
+    };
+  };
+
   const payingTrxHistory = payingTrx ? paymentsByTrxId[payingTrx.id] || [] : [];
   const payingTrxSupplierDebt = payingTrx ? getSupplierDebt(payingTrx.customer) : 0;
 
@@ -252,25 +292,45 @@ export function KtHutangPage() {
         title="Hutang & Piutang"
         subtitle="Catat pembayaran bertanggal per nota (termasuk Potong Utang Pemasok) & pantau riwayat cicilan mitra."
         actions={
-          <div className="inline-flex rounded-xl t-card p-1">
+          <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
-              onClick={() => setActiveTab('nota')}
-              className={`px-4 py-1.5 rounded-lg text-xs whitespace-nowrap ${
-                activeTab === 'nota' ? 't-btn-primary' : 'font-semibold t-muted'
-              }`}
+              onClick={() => downloadHutangPiutangTemplate(activeTab)}
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl t-btn-secondary text-xs font-semibold whitespace-nowrap"
+              title="Unduh template Excel Hutang & Piutang"
             >
-              Hutang &amp; Piutang Nota ({unpaidCount})
+              <Download className="w-3.5 h-3.5" />
+              <span>Template</span>
             </button>
             <button
               type="button"
-              onClick={() => setActiveTab('mitra')}
-              className={`px-4 py-1.5 rounded-lg text-xs whitespace-nowrap ${
-                activeTab === 'mitra' ? 't-btn-primary' : 'font-semibold t-muted'
-              }`}
+              onClick={() => setImportModalOpen(true)}
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl t-btn-primary text-xs font-semibold whitespace-nowrap"
+              title="Impor data Hutang & Piutang dari file Excel/CSV"
             >
-              Piutang Mitra ({mitraStats.openCount})
+              <Upload className="w-3.5 h-3.5" />
+              <span>Impor Excel</span>
             </button>
+            <div className="inline-flex rounded-xl t-card p-1">
+              <button
+                type="button"
+                onClick={() => setActiveTab('nota')}
+                className={`px-3.5 py-1.5 rounded-lg text-xs whitespace-nowrap ${
+                  activeTab === 'nota' ? 't-btn-primary' : 'font-semibold t-muted'
+                }`}
+              >
+                Hutang &amp; Piutang Nota ({unpaidCount})
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab('mitra')}
+                className={`px-3.5 py-1.5 rounded-lg text-xs whitespace-nowrap ${
+                  activeTab === 'mitra' ? 't-btn-primary' : 'font-semibold t-muted'
+                }`}
+              >
+                Piutang Mitra ({mitraStats.openCount})
+              </button>
+            </div>
           </div>
         }
       />
@@ -1100,6 +1160,15 @@ export function KtHutangPage() {
           setEditingTransaction(trx);
           setActiveMenu('menu-kt-transaksi');
         }}
+      />
+
+      {/* Modal Template & Impor Hutang Piutang */}
+      <HutangImportModal
+        key={activeTab}
+        open={importModalOpen}
+        defaultTab={activeTab}
+        onClose={() => setImportModalOpen(false)}
+        onImportFile={handleImportHutangFile}
       />
     </section>
   );

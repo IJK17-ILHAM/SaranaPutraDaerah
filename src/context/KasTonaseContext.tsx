@@ -25,6 +25,14 @@ import {
   hydratePaymentsFromTransactions,
   hydrateStockMutationsFromTransactions,
 } from '../utils/kasLedger';
+import type {
+  ImportedHutangNotaRow,
+  ImportedPiutangMitraRow,
+} from '../utils/hutangSpreadsheet';
+import type {
+  ImportedKtBarangRow,
+  ImportedKtCustomerRow,
+} from '../utils/ktMasterSpreadsheet';
 import { useApp } from './AppContext';
 
 export interface AddPiutangMitraInput {
@@ -95,6 +103,14 @@ interface KasTonaseContextValue {
     piutangMitra: number;
   };
   getSupplierDebt: (name: string, excludeTrxId?: string | null) => number;
+  importHutangPiutangBatch: (payload: {
+    notas: ImportedHutangNotaRow[];
+    mitras: ImportedPiutangMitraRow[];
+  }) => { notasImported: number; mitrasImported: number };
+  importKtMasterBatch: (payload: {
+    barang: ImportedKtBarangRow[];
+    customers: ImportedKtCustomerRow[];
+  }) => { barangImported: number; customersImported: number };
   seedSampleData: () => void;
   clearAllData: () => void;
 }
@@ -1396,6 +1412,315 @@ export function KasTonaseProvider({ children }: { children: React.ReactNode }) {
     showToast('Data contoh Kas & Tonase berhasil dimuat ulang.', 'success');
   }, [persist, showToast]);
 
+  const importHutangPiutangBatch = useCallback(
+    (payload: { notas: ImportedHutangNotaRow[]; mitras: ImportedPiutangMitraRow[] }) => {
+      const actor = user ? user.nama || user.username : 'Admin';
+      const now = Date.now();
+      let nextTransactions = [...transactions];
+      let nextPiutang = [...piutangMitra];
+      let nextPayments = [...payments];
+      let nextCustomers = [...customers];
+
+      const ensureCustomer = (name: string, tipe: 'Supplier' | 'Buyer', plat = '') => {
+        const clean = name.trim();
+        if (!clean) return;
+        const exists = nextCustomers.some((c) => c.nama.toLowerCase() === clean.toLowerCase());
+        if (!exists) {
+          const newCust: KtCustomer = {
+            id: `CST_IMP_${now}_${nextCustomers.length + 1}`,
+            nama: clean,
+            tipe,
+            plat,
+            telp: '-',
+          };
+          nextCustomers = [...nextCustomers, newCust];
+          syncRemote('saveCustomer', newCust as unknown as Record<string, unknown>);
+        }
+      };
+
+      let notasImported = 0;
+      const newTrxToPrepend: KtTransaction[] = [];
+
+      payload.notas.forEach((row, idx) => {
+        const generatedNota =
+          row.nota ||
+          `NT-IMP-${String(nextTransactions.length + newTrxToPrepend.length + idx + 1).padStart(3, '0')}`;
+        const existingIdx = nextTransactions.findIndex(
+          (t) => t.nota.toLowerCase() === generatedNota.toLowerCase(),
+        );
+
+        ensureCustomer(row.customer, row.tipe === 'Beli' ? 'Supplier' : 'Buyer', row.plat);
+
+        if (existingIdx >= 0) {
+          const prev = nextTransactions[existingIdx];
+          const updated: KtTransaction = {
+            ...prev,
+            tanggal: row.tanggal || prev.tanggal,
+            tipe: row.tipe,
+            customer: row.customer,
+            plat: row.plat || prev.plat,
+            metode: row.metode,
+            totalNetto: row.totalNetto || prev.totalNetto,
+            totalBayar: row.totalBayar,
+            dibayar: row.dibayar,
+            sisa: row.sisa,
+            catatan: row.catatan || prev.catatan,
+          };
+          nextTransactions[existingIdx] = updated;
+          syncRemote('saveTransaction', {
+            ...updated,
+            items: JSON.stringify(updated.items || []),
+          });
+        } else {
+          const created: KtTransaction = {
+            id: `TRX_IMP_${now}_${idx + 1}`,
+            nota: generatedNota,
+            tanggal: row.tanggal || getTodayISO(),
+            tipe: row.tipe,
+            customer: row.customer,
+            plat: row.plat,
+            metode: row.metode,
+            items: [],
+            totalNetto: row.totalNetto,
+            totalBayar: row.totalBayar,
+            dibayar: row.dibayar,
+            sisa: row.sisa,
+            catatan: row.catatan || 'Impor saldo Hutang & Piutang Excel',
+            diinputOleh: actor,
+          };
+          newTrxToPrepend.push(created);
+          const initialPays = buildInitialPaymentsForTransaction(created, actor);
+          if (initialPays.length > 0) {
+            nextPayments = [...initialPays, ...nextPayments];
+            initialPays.forEach((p) => {
+              syncRemote('savePayment', p as unknown as Record<string, unknown>);
+            });
+          }
+          syncRemote('saveTransaction', {
+            ...created,
+            items: JSON.stringify(created.items || []),
+          });
+        }
+        notasImported += 1;
+      });
+
+      if (newTrxToPrepend.length > 0) {
+        nextTransactions = [...newTrxToPrepend, ...nextTransactions];
+      }
+
+      let mitrasImported = 0;
+      const newMitraToPrepend: KtPiutangMitra[] = [];
+
+      payload.mitras.forEach((row, idx) => {
+        const generatedKode =
+          row.kode ||
+          `PM-${String(nextPiutang.length + newMitraToPrepend.length + 1).padStart(3, '0')}`;
+        const existingIdx = nextPiutang.findIndex(
+          (p) => p.kode.toLowerCase() === generatedKode.toLowerCase(),
+        );
+
+        ensureCustomer(row.customer, 'Supplier');
+
+        if (existingIdx >= 0) {
+          const prev = nextPiutang[existingIdx];
+          const updated: KtPiutangMitra = {
+            ...prev,
+            tanggal: row.tanggal || prev.tanggal,
+            customer: row.customer,
+            keterangan: row.keterangan || prev.keterangan,
+            nominalAwal: row.nominalAwal,
+            terbayar: row.terbayar,
+            sisa: row.sisa,
+          };
+          nextPiutang[existingIdx] = updated;
+          syncRemote('savePiutangMitra', {
+            ...updated,
+            cicilan: JSON.stringify(updated.cicilan || []),
+          });
+        } else {
+          const initialCicilan: KtPiutangCicilan[] =
+            row.terbayar > 0
+              ? [
+                  {
+                    id: `CCL_IMP_${now}_${idx + 1}`,
+                    tanggal: row.tanggal || getTodayISO(),
+                    nominal: row.terbayar,
+                    sumber: 'Bayar Langsung',
+                    metode: 'Transfer',
+                    keterangan: 'Cicilan awal (Impor Excel)',
+                  },
+                ]
+              : [];
+          const created: KtPiutangMitra = {
+            id: `PM_IMP_${now}_${idx + 1}`,
+            kode: generatedKode,
+            tanggal: row.tanggal || getTodayISO(),
+            customer: row.customer,
+            keterangan: row.keterangan,
+            nominalAwal: row.nominalAwal,
+            terbayar: row.terbayar,
+            sisa: row.sisa,
+            cicilan: initialCicilan,
+            diinputOleh: actor,
+          };
+          newMitraToPrepend.push(created);
+          syncRemote('savePiutangMitra', {
+            ...created,
+            cicilan: JSON.stringify(created.cicilan),
+          });
+        }
+        mitrasImported += 1;
+      });
+
+      if (newMitraToPrepend.length > 0) {
+        nextPiutang = [...newMitraToPrepend, ...nextPiutang];
+      }
+
+      if (notasImported > 0 || mitrasImported > 0) {
+        setTransactions(nextTransactions);
+        setPiutangMitra(nextPiutang);
+        setPayments(nextPayments);
+        setCustomers(nextCustomers);
+        persist(
+          barangList,
+          nextCustomers,
+          nextTransactions,
+          kasOps,
+          nextPiutang,
+          nextPayments,
+          stockMutations,
+        );
+        showToast(
+          `Impor berhasil: ${notasImported} nota & ${mitrasImported} piutang mitra disimpan.`,
+          'success',
+        );
+      }
+
+      return { notasImported, mitrasImported };
+    },
+    [
+      barangList,
+      customers,
+      kasOps,
+      payments,
+      persist,
+      piutangMitra,
+      showToast,
+      stockMutations,
+      syncRemote,
+      transactions,
+      user,
+    ],
+  );
+
+  const importKtMasterBatch = useCallback(
+    (payload: { barang: ImportedKtBarangRow[]; customers: ImportedKtCustomerRow[] }) => {
+      const now = Date.now();
+      let nextBarang = [...barangList];
+      let nextCustomers = [...customers];
+      let barangImported = 0;
+      let customersImported = 0;
+
+      payload.barang.forEach((row, idx) => {
+        const cleanNama = row.nama.trim();
+        if (!cleanNama) return;
+        const existingIdx = nextBarang.findIndex(
+          (b) => b.nama.toLowerCase() === cleanNama.toLowerCase(),
+        );
+        if (existingIdx >= 0) {
+          const prev = nextBarang[existingIdx];
+          const updated: KtBarang = {
+            ...prev,
+            nama: cleanNama,
+            stokKg: typeof row.stokKg === 'number' ? row.stokKg : prev.stokKg,
+            potDefault: row.potDefault,
+            minKg: row.minKg,
+            hargaBeli: row.hargaBeli > 0 ? row.hargaBeli : prev.hargaBeli,
+            hargaJual: row.hargaJual > 0 ? row.hargaJual : prev.hargaJual,
+          };
+          nextBarang[existingIdx] = updated;
+          syncRemote('saveBarang', updated as unknown as Record<string, unknown>);
+        } else {
+          const created: KtBarang = {
+            id: `BRG_IMP_${now}_${idx + 1}`,
+            nama: cleanNama,
+            stokKg: typeof row.stokKg === 'number' ? row.stokKg : 0,
+            potDefault: row.potDefault,
+            minKg: row.minKg,
+            hargaBeli: row.hargaBeli,
+            hargaJual: row.hargaJual,
+          };
+          nextBarang = [...nextBarang, created];
+          syncRemote('saveBarang', created as unknown as Record<string, unknown>);
+        }
+        barangImported += 1;
+      });
+
+      payload.customers.forEach((row, idx) => {
+        const cleanNama = row.nama.trim();
+        if (!cleanNama) return;
+        const existingIdx = nextCustomers.findIndex(
+          (c) => c.nama.toLowerCase() === cleanNama.toLowerCase(),
+        );
+        if (existingIdx >= 0) {
+          const prev = nextCustomers[existingIdx];
+          const updated: KtCustomer = {
+            ...prev,
+            nama: cleanNama,
+            tipe: row.tipe || prev.tipe,
+            plat: row.plat || prev.plat,
+            telp: row.telp || prev.telp,
+          };
+          nextCustomers[existingIdx] = updated;
+          syncRemote('saveCustomer', updated as unknown as Record<string, unknown>);
+        } else {
+          const created: KtCustomer = {
+            id: `CST_IMP_${now}_${idx + 1}`,
+            nama: cleanNama,
+            tipe: row.tipe || 'Supplier & Buyer',
+            plat: row.plat,
+            telp: row.telp,
+          };
+          nextCustomers = [...nextCustomers, created];
+          syncRemote('saveCustomer', created as unknown as Record<string, unknown>);
+        }
+        customersImported += 1;
+      });
+
+      if (barangImported > 0 || customersImported > 0) {
+        setBarangList(nextBarang);
+        setCustomers(nextCustomers);
+        persist(
+          nextBarang,
+          nextCustomers,
+          transactions,
+          kasOps,
+          piutangMitra,
+          payments,
+          stockMutations,
+        );
+        showToast(
+          `Impor berhasil: ${barangImported} barang & ${customersImported} customer disimpan.`,
+          'success',
+        );
+      }
+
+      return { barangImported, customersImported };
+    },
+    [
+      barangList,
+      customers,
+      kasOps,
+      payments,
+      persist,
+      piutangMitra,
+      showToast,
+      stockMutations,
+      syncRemote,
+      transactions,
+    ],
+  );
+
   const clearAllData = useCallback(() => {
     const resetBarang = barangList.map((b) => ({ ...b, stokKg: 0 }));
     setBarangList(resetBarang);
@@ -1439,6 +1764,8 @@ export function KasTonaseProvider({ children }: { children: React.ReactNode }) {
         deleteKasOps,
         getCustomerOutstanding,
         getSupplierDebt,
+        importHutangPiutangBatch,
+        importKtMasterBatch,
         seedSampleData,
         clearAllData,
       }}

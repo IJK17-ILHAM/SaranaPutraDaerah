@@ -1,20 +1,27 @@
 import {
+  Download,
   FileSpreadsheet,
   MapPin,
   Pencil,
   Plus,
   Power,
   Search,
+  Upload,
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
-import { ArmadaMenuIcon } from '../../components/armada/ArmadaMenuIcons';
 import { LokasiFormModal } from '../../components/armada/LokasiFormModal';
+import { MasterDataImportModal } from '../../components/armada/MasterDataImportModal';
 import type {
   ArmadaJenisLokasi,
   ArmadaLokasi,
   ArmadaLokasiInput,
   ArmadaPelanggan,
 } from '../../types/armada';
+import {
+  downloadMasterDataTemplate,
+  type MasterDataTabKey,
+  type SpsArmadaImportResult,
+} from '../../utils/armadaSpreadsheet';
 
 interface LokasiPageProps {
   lokasiList: ArmadaLokasi[];
@@ -25,6 +32,10 @@ interface LokasiPageProps {
   onSaveLokasi: (input: ArmadaLokasiInput) => ArmadaLokasi;
   onToggleStatus: (lokasi: ArmadaLokasi) => void;
   onExportWorkbook: () => void;
+  onImportMasterData: (
+    file: File,
+    preferredTab: MasterDataTabKey | 'all',
+  ) => Promise<SpsArmadaImportResult | null>;
 }
 
 const JENIS_TABS: Array<{ id: 'ALL' | ArmadaJenisLokasi; label: string }> = [
@@ -43,11 +54,13 @@ export function LokasiPage({
   onSaveLokasi,
   onToggleStatus,
   onExportWorkbook,
+  onImportMasterData,
 }: LokasiPageProps) {
   const [search, setSearch] = useState('');
   const [pelangganFilter, setPelangganFilter] = useState<string>(initialPelangganFilter);
   const [jenisFilter, setJenisFilter] = useState<'ALL' | ArmadaJenisLokasi>('ALL');
   const [modalOpen, setModalOpen] = useState(false);
+  const [importModalOpen, setImportModalOpen] = useState(false);
   const [editingLokasi, setEditingLokasi] = useState<ArmadaLokasi | null>(null);
 
   useEffect(() => {
@@ -118,41 +131,39 @@ export function LokasiPage({
 
   return (
     <section className="space-y-5">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div className="flex items-start gap-3">
-          <div className="w-11 h-11 rounded-xl t-subtle border t-border flex items-center justify-center shrink-0">
-            <ArmadaMenuIcon id="armada-master-lokasi" size={30} />
-          </div>
-          <div>
-            <div className="text-[11px] font-semibold t-link">Tab SPS: Lokasi</div>
-            <h2 className="text-base sm:text-lg font-display font-bold t-text leading-snug">
-              Master Lokasi Muat–Bongkar
-            </h2>
-            <p className="text-xs t-muted mt-0.5 max-w-2xl">
-              Satu pelanggan dapat memiliki beberapa titik muat maupun bongkar. Alamat yang dicatat
-              di sini langsung dapat dipilih saat membuat perjalanan dan tarif.
-            </p>
-          </div>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            onClick={onExportWorkbook}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl t-btn-secondary text-xs font-semibold whitespace-nowrap"
-          >
-            <FileSpreadsheet className="w-4 h-4" />
-            <span>Unduh SPS Armada</span>
-          </button>
-          <button
-            type="button"
-            onClick={openCreateModal}
-            className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl t-btn-primary text-xs whitespace-nowrap"
-          >
-            <Plus className="w-4 h-4" />
-            <span>Tambah Lokasi</span>
-          </button>
-        </div>
+      <div className="flex flex-wrap items-center justify-end gap-2">
+        <button
+          type="button"
+          onClick={() => downloadMasterDataTemplate('lokasi')}
+          className="inline-flex items-center gap-1.5 px-3 py-2.5 rounded-xl t-btn-secondary text-xs font-semibold whitespace-nowrap"
+        >
+          <Download className="w-4 h-4" />
+          <span>Template</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => setImportModalOpen(true)}
+          className="inline-flex items-center gap-1.5 px-3 py-2.5 rounded-xl t-btn-secondary text-xs font-semibold whitespace-nowrap"
+        >
+          <Upload className="w-4 h-4" />
+          <span>Impor Excel</span>
+        </button>
+        <button
+          type="button"
+          onClick={onExportWorkbook}
+          className="inline-flex items-center gap-1.5 px-3 py-2.5 rounded-xl t-btn-secondary text-xs font-semibold whitespace-nowrap"
+        >
+          <FileSpreadsheet className="w-4 h-4" />
+          <span>Ekspor SPS</span>
+        </button>
+        <button
+          type="button"
+          onClick={openCreateModal}
+          className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl t-btn-primary text-xs whitespace-nowrap"
+        >
+          <Plus className="w-4 h-4" />
+          <span>Tambah Lokasi</span>
+        </button>
       </div>
 
       {/* 4 Compact Summary Metrics */}
@@ -361,6 +372,13 @@ export function LokasiPage({
           setEditingLokasi(null);
         }}
         onSave={handleSave}
+      />
+
+      <MasterDataImportModal
+        open={importModalOpen}
+        tabKey="lokasi"
+        onClose={() => setImportModalOpen(false)}
+        onImportFile={onImportMasterData}
       />
     </section>
   );

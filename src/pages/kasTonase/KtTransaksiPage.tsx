@@ -11,6 +11,7 @@ import {
   Save,
   StickyNote,
   Trash2,
+  Wallet,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { PageHeader } from '../../components/common/PageHeader';
@@ -45,18 +46,22 @@ interface DraftRow {
   pot: number;
 }
 
+type TransaksiFormMode = KtTrxType | 'PiutangMitra';
+
 export function KtTransaksiPage() {
   const { user, setActiveMenu, triggerPrint, showToast, requestConfirm } = useApp();
   const {
     barangList,
     customers,
     transactions,
+    piutangMitra,
     isSyncing,
     editingTransaction,
     setEditingTransaction,
     refreshTonase,
     saveTransaction,
     deleteTransaction,
+    addPiutangMitra,
     getCustomerOutstanding,
     getSupplierDebt,
   } = useKasTonase();
@@ -98,6 +103,7 @@ export function KtTransaksiPage() {
   const [nota, setNota] = useState(() => generateNextNota(getTodayISO()));
   const [tanggal, setTanggal] = useState(getTodayISO);
   const [trxType, setTrxType] = useState<KtTrxType>('Beli');
+  const [formMode, setFormMode] = useState<TransaksiFormMode>('Beli');
   const [selectedCustId, setSelectedCustId] = useState('');
   const [customerNama, setCustomerNama] = useState('');
   const [plat, setPlat] = useState('');
@@ -113,9 +119,26 @@ export function KtTransaksiPage() {
   const [potongMode, setPotongMode] = useState<PotongUtangMode>('persen');
   const [potongInputStr, setPotongInputStr] = useState('50');
 
+  // Piutang Mitra form state (otomatis tercatat ke Hutang & Piutang -> Piutang Mitra)
+  const [pmSelectedCust, setPmSelectedCust] = useState('');
+  const [pmCustomer, setPmCustomer] = useState('');
+  const [pmKeterangan, setPmKeterangan] = useState('');
+  const [pmNominalStr, setPmNominalStr] = useState('');
+  const [pmMetode, setPmMetode] = useState<'Transfer' | 'Tunai'>('Transfer');
+  const [pmCatatKas, setPmCatatKas] = useState(true);
+
   const [historySearch, setHistorySearch] = useState('');
   const [historyType, setHistoryType] = useState<'ALL' | KtTrxType>('ALL');
   const [detailTrx, setDetailTrx] = useState<KtTransaction | null>(null);
+
+  const resetPiutangMitraForm = useCallback(() => {
+    setPmSelectedCust('');
+    setPmCustomer('');
+    setPmKeterangan('');
+    setPmNominalStr('');
+    setPmMetode('Transfer');
+    setPmCatatKas(true);
+  }, []);
 
   const resetForm = useCallback(
     (justSavedNota?: string) => {
@@ -124,7 +147,12 @@ export function KtTransaksiPage() {
       setEditingTransaction(null);
       setTanggal(today);
       setNota(generateNextNota(today, justSavedNota));
+      if (formMode === 'PiutangMitra') {
+        resetPiutangMitraForm();
+        return;
+      }
       setTrxType('Beli');
+      setFormMode('Beli');
       setSelectedCustId('');
       setCustomerNama('');
       setPlat('');
@@ -138,7 +166,7 @@ export function KtTransaksiPage() {
       setPotongMode('persen');
       setPotongInputStr('50');
     },
-    [createEmptyRow, generateNextNota, setEditingTransaction],
+    [createEmptyRow, formMode, generateNextNota, resetPiutangMitraForm, setEditingTransaction],
   );
 
   useEffect(() => {
@@ -147,6 +175,7 @@ export function KtTransaksiPage() {
       setNota(normalizeInvoiceCode(editingTransaction.nota));
       setTanggal(normalizeDateISO(editingTransaction.tanggal) || getTodayISO());
       setTrxType(editingTransaction.tipe);
+      setFormMode(editingTransaction.tipe);
       setCustomerNama(editingTransaction.customer);
       setPlat(editingTransaction.plat || '');
       setRows(
@@ -255,13 +284,49 @@ export function KtTransaksiPage() {
 
   const outstanding = getCustomerOutstanding(customerNama);
 
-  const handleSwitchType = (nextType: KtTrxType) => {
-    setTrxType(nextType);
-    if (nextType === 'Jual') {
-      setUsePotongUtang(false);
+  const handleSwitchMode = (nextMode: TransaksiFormMode) => {
+    setFormMode(nextMode);
+    if (nextMode === 'Beli' || nextMode === 'Jual') {
+      setTrxType(nextMode);
+      if (nextMode === 'Jual') {
+        setUsePotongUtang(false);
+      }
+      setManualDibayar(false);
     }
-    setManualDibayar(false);
   };
+
+  const handleSelectPmCustomer = (cid: string) => {
+    setPmSelectedCust(cid);
+    const found = customers.find((c) => c.id === cid);
+    if (found) setPmCustomer(found.nama);
+  };
+
+  const handleSavePiutangMitra = (e: React.FormEvent) => {
+    e.preventDefault();
+    const nom = cleanRupiahToNumber(pmNominalStr);
+    if (!pmCustomer.trim()) {
+      showToast('Isi nama PT / Pemasok terlebih dahulu.', 'warning');
+      return;
+    }
+    if (nom <= 0) {
+      showToast('Nominal piutang mitra harus lebih dari Rp 0.', 'warning');
+      return;
+    }
+    addPiutangMitra({
+      tanggal: tanggal || getTodayISO(),
+      customer: pmCustomer.trim(),
+      keterangan: pmKeterangan.trim() || 'Pinjaman / Kasbon Mitra',
+      nominalAwal: nom,
+      catatKasKeluar: pmCatatKas,
+      metode: pmMetode,
+    });
+    resetPiutangMitraForm();
+  };
+
+  const pmExistingDebt = useMemo(
+    () => (pmCustomer.trim() ? getSupplierDebt(pmCustomer) : 0),
+    [getSupplierDebt, pmCustomer],
+  );
 
   const handleSelectCustomer = (cid: string) => {
     setSelectedCustId(cid);
@@ -457,12 +522,24 @@ export function KtTransaksiPage() {
       <PageHeader
         suiteLabel="Kas & Tonase"
         pageLabel="Transaksi baru"
-        title={editId ? `Edit Transaksi: ${nota}` : 'Transaksi Baru'}
+        title={
+          formMode === 'PiutangMitra'
+            ? 'Catat Piutang Mitra'
+            : editId
+              ? `Edit Transaksi: ${nota}`
+              : 'Transaksi Baru'
+        }
         meta={
           <div className="flex flex-wrap items-center gap-3 mt-1">
-            <span>
-              Nota <b className="t-text font-mono-num">{nota}</b>
-            </span>
+            {formMode !== 'PiutangMitra' ? (
+              <span>
+                Nota <b className="t-text font-mono-num">{nota}</b>
+              </span>
+            ) : (
+              <span>
+                Kode otomatis <b className="t-text font-mono-num">PM-{String(piutangMitra.length + 1).padStart(3, '0')}</b>
+              </span>
+            )}
             <label className="inline-flex items-center gap-1.5 text-xs t-muted">
               <span>Tanggal transaksi</span>
               <input
@@ -486,9 +563,9 @@ export function KtTransaksiPage() {
             <div className="inline-flex rounded-xl t-card p-1">
               <button
                 type="button"
-                onClick={() => handleSwitchType('Beli')}
-                className={`inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-xs whitespace-nowrap ${
-                  trxType === 'Beli' ? 't-btn-primary' : 'font-semibold t-muted'
+                onClick={() => handleSwitchMode('Beli')}
+                className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs whitespace-nowrap ${
+                  formMode === 'Beli' ? 't-btn-primary' : 'font-semibold t-muted'
                 }`}
               >
                 <ArrowDownLeft className="w-3.5 h-3.5" />
@@ -496,13 +573,23 @@ export function KtTransaksiPage() {
               </button>
               <button
                 type="button"
-                onClick={() => handleSwitchType('Jual')}
-                className={`inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-xs whitespace-nowrap ${
-                  trxType === 'Jual' ? 't-btn-primary' : 'font-semibold t-muted'
+                onClick={() => handleSwitchMode('Jual')}
+                className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs whitespace-nowrap ${
+                  formMode === 'Jual' ? 't-btn-primary' : 'font-semibold t-muted'
                 }`}
               >
                 <ArrowUpRight className="w-3.5 h-3.5" />
                 <span>Jual</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleSwitchMode('PiutangMitra')}
+                className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs whitespace-nowrap ${
+                  formMode === 'PiutangMitra' ? 't-btn-primary' : 'font-semibold t-muted'
+                }`}
+              >
+                <Wallet className="w-3.5 h-3.5" />
+                <span>Piutang Mitra</span>
               </button>
             </div>
             <button
@@ -526,8 +613,194 @@ export function KtTransaksiPage() {
         }
       />
 
-      {/* Customer & Plat Bar */}
-      <div className="t-card rounded-2xl p-4 flex flex-col md:flex-row md:items-center justify-between gap-3">
+      {formMode === 'PiutangMitra' ? (
+        <div className="space-y-5">
+          {/* Form Catat Piutang Mitra di Halaman Transaksi */}
+          <form onSubmit={handleSavePiutangMitra} className="t-card rounded-2xl p-5 space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b t-border">
+              <div>
+                <div className="t-section-label">Form Piutang Mitra (Utang Pemasok / Pinjaman PT)</div>
+                <p className="text-xs t-muted mt-0.5">
+                  Otomatis tercatat di menu <b>Hutang &amp; Piutang &rarr; Piutang Mitra</b> serta
+                  tersedia untuk <b>Potong Utang Pemasok</b> pada Transaksi Beli.
+                </p>
+              </div>
+              {pmExistingDebt > 0 && (
+                <div className="px-3.5 py-1.5 rounded-xl t-status-info text-xs font-bold font-mono-num whitespace-nowrap">
+                  Saldo Piutang Saat Ini: {formatRupiah(pmExistingDebt)}
+                </div>
+              )}
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
+              <div>
+                <label className="block t-field-label mb-1">Pilih Mitra / Pemasok (opsional)</label>
+                <select
+                  value={pmSelectedCust}
+                  onChange={(e) => handleSelectPmCustomer(e.target.value)}
+                  className="w-full text-xs px-3 py-2.5 rounded-xl t-input font-semibold"
+                >
+                  <option value="">-- Dari Daftar Customer / Supplier --</option>
+                  {customers.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.nama}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block t-field-label mb-1">Nama PT / Pemasok *</label>
+                <input
+                  type="text"
+                  value={pmCustomer}
+                  onChange={(e) => setPmCustomer(e.target.value)}
+                  required
+                  placeholder="cth: CV Maju Jaya / PT Sumber Limbah"
+                  className="w-full text-xs px-3 py-2.5 rounded-xl t-input font-bold"
+                />
+              </div>
+              <div>
+                <label className="block t-field-label mb-1">Nominal Piutang Mitra (Rp) *</label>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  value={pmNominalStr}
+                  onChange={(e) => setPmNominalStr(formatCurrencyInput(e.target.value))}
+                  required
+                  placeholder="1.000.000"
+                  className="w-full text-xs px-3 py-2.5 rounded-xl t-input font-mono-num font-bold"
+                />
+              </div>
+              <div>
+                <label className="block t-field-label mb-1">Metode Penyerahan Dana</label>
+                <select
+                  value={pmMetode}
+                  onChange={(e) => setPmMetode(e.target.value as 'Transfer' | 'Tunai')}
+                  className="w-full text-xs px-3 py-2.5 rounded-xl t-input font-semibold"
+                >
+                  <option value="Transfer">Transfer</option>
+                  <option value="Tunai">Tunai</option>
+                </select>
+              </div>
+              <div className="sm:col-span-2">
+                <label className="block t-field-label mb-1">Keterangan / Keperluan</label>
+                <input
+                  type="text"
+                  value={pmKeterangan}
+                  onChange={(e) => setPmKeterangan(e.target.value)}
+                  placeholder="cth: Uang muka pembelian limbah / Pinjaman modal operasional"
+                  className="w-full text-xs px-3 py-2.5 rounded-xl t-input"
+                />
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t t-border">
+              <label className="inline-flex items-center gap-2 text-xs t-muted cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={pmCatatKas}
+                  onChange={(e) => setPmCatatKas(e.target.checked)}
+                  className="w-4 h-4 rounded accent-[var(--accent-brand)]"
+                />
+                <span>
+                  Catat otomatis sebagai <b>Kas Keluar</b> di Buku Kas pada tanggal{' '}
+                  <b className="font-mono-num t-text">{formatDateShortID(tanggal)}</b>
+                </span>
+              </label>
+
+              <button
+                type="submit"
+                className="px-4 py-2.5 rounded-xl t-btn-primary text-xs inline-flex items-center gap-1.5 whitespace-nowrap"
+              >
+                <Save className="w-3.5 h-3.5" />
+                <span>Simpan Piutang Mitra</span>
+              </button>
+            </div>
+          </form>
+
+          {/* Ringkasan Piutang Mitra Terbaru */}
+          <div className="t-card rounded-2xl overflow-hidden">
+            <div className="p-4 border-b t-border flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <span className="t-section-label">
+                  Daftar Piutang Mitra Tercatat ({piutangMitra.length})
+                </span>
+                <p className="text-[11px] t-muted mt-0.5">
+                  Setiap data yang disimpan di atas langsung tersinkron ke menu Hutang &amp;
+                  Piutang.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setActiveMenu('menu-kt-hutang')}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl t-btn-secondary text-xs font-semibold whitespace-nowrap"
+              >
+                <span>Buka Hutang &amp; Piutang</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead>
+                  <tr className="t-subtle border-b t-border">
+                    <th className="py-3 px-4 t-th-label">Kode &amp; Tgl</th>
+                    <th className="py-3 px-3 t-th-label">Nama PT / Mitra</th>
+                    <th className="py-3 px-3 t-th-label">Keterangan</th>
+                    <th className="py-3 px-3 t-th-label text-right">Nominal Awal</th>
+                    <th className="py-3 px-3 t-th-label text-right">Terbayar</th>
+                    <th className="py-3 px-4 t-th-label text-right">Sisa Piutang</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y t-border">
+                  {piutangMitra.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} className="p-6 text-center t-muted">
+                        Belum ada data Piutang Mitra tercatat. Gunakan formulir di atas untuk
+                        menambahkan.
+                      </td>
+                    </tr>
+                  ) : (
+                    piutangMitra.slice(0, 10).map((pm) => (
+                      <tr key={pm.id} className="t-row-hover">
+                        <td className="py-3 px-4">
+                          <div className="font-mono-num font-bold t-text">{pm.kode}</div>
+                          <div className="text-[10px] t-muted font-mono-num">
+                            {formatDateShortID(pm.tanggal)}
+                          </div>
+                        </td>
+                        <td className="py-3 px-3 font-semibold t-text">{pm.customer}</td>
+                        <td className="py-3 px-3 t-muted">{pm.keterangan || '-'}</td>
+                        <td className="py-3 px-3 text-right font-mono-num t-text">
+                          {formatRupiah(pm.nominalAwal)}
+                        </td>
+                        <td className="py-3 px-3 text-right font-mono-num t-muted">
+                          {formatRupiah(pm.terbayar)}
+                        </td>
+                        <td className="py-3 px-4 text-right font-mono-num font-bold">
+                          <span
+                            style={{
+                              color:
+                                pm.sisa > 0
+                                  ? 'var(--status-warn-text)'
+                                  : 'var(--status-ok-text)',
+                            }}
+                          >
+                            {pm.sisa > 0 ? formatRupiah(pm.sisa) : 'Lunas'}
+                          </span>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <>
+          {/* Customer & Plat Bar */}
+          <div className="t-card rounded-2xl p-4 flex flex-col md:flex-row md:items-center justify-between gap-3">
         <div className="flex-1 grid grid-cols-1 sm:grid-cols-3 gap-2.5 items-center">
           <select
             value={selectedCustId}
@@ -988,6 +1261,8 @@ export function KtTransaksiPage() {
           </button>
         </div>
       </div>
+        </>
+      )}
 
       {/* Transaction History */}
       <div className="t-card rounded-2xl overflow-hidden">

@@ -10,6 +10,7 @@ import {
   History,
   Lock,
   MapPin,
+  Package,
   PackageCheck,
   Play,
   Plus,
@@ -21,7 +22,11 @@ import {
 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { ArmadaMenuIcon } from '../../components/armada/ArmadaMenuIcons';
-import { ARMADA_SOPIR_LIST, P2H_CHECKLIST_TEMPLATE } from '../../data/armadaSeed';
+import {
+  ARMADA_SOPIR_LIST,
+  P2H_CHECKLIST_TEMPLATE,
+  computePermintaanBarangStatus,
+} from '../../data/armadaSeed';
 import type {
   ArmadaKendalaKategori,
   ArmadaKendalaReport,
@@ -30,11 +35,13 @@ import type {
   ArmadaP2HRecord,
   ArmadaPelanggan,
   ArmadaPerjalanan,
+  ArmadaPermintaanBarang,
   ArmadaUangJalan,
   ArmadaUnit,
   P2HChecklistItem,
   P2HCondition,
   PengeluaranKategori,
+  PermintaanBarangStatus,
   UangJalanExpenseItem,
 } from '../../types/armada';
 import {
@@ -49,7 +56,19 @@ import {
   formatRupiah,
 } from '../../utils/format';
 
-type SopirTabId = 'tugas' | 'kendala' | 'riwayat';
+type SopirTabId = 'tugas' | 'barang' | 'kendala' | 'riwayat';
+
+const SATUAN_BARANG_OPTIONS = [
+  'Pcs',
+  'Set',
+  'Unit',
+  'Liter',
+  'Botol',
+  'Roll',
+  'Meter',
+  'Kg',
+  'Box',
+];
 
 const KENDALA_CATEGORIES: ArmadaKendalaKategori[] = [
   'Masalah Kendaraan',
@@ -77,6 +96,7 @@ interface TugasSayaSopirPageProps {
   p2hList: ArmadaP2HRecord[];
   maintenanceList: ArmadaMaintenanceRequest[];
   kendalaList: ArmadaKendalaReport[];
+  permintaanBarangList: ArmadaPermintaanBarang[];
   onSubmitP2H: (params: {
     perjalananId: string;
     sopirNama: string;
@@ -104,6 +124,14 @@ interface TugasSayaSopirPageProps {
     rincianPengeluaran: UangJalanExpenseItem[];
     catatanPertanggungjawaban: string;
   }) => void;
+  onSubmitPermintaanBarang: (params: {
+    unitId: string;
+    sopirNama: string;
+    items: Array<{ namaBarang: string; satuan: string; jumlahDiminta: number }>;
+    catatan?: string;
+    fotoDataUrl?: string;
+    fotoNama?: string;
+  }) => void;
 }
 
 function formatTimeHM(iso?: string): string {
@@ -111,6 +139,23 @@ function formatTimeHM(iso?: string): string {
   const d = new Date(iso);
   if (isNaN(d.getTime())) return iso;
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+
+function resolvePhotoPreviewSrc(url?: string): string | null {
+  if (!url) return null;
+  if (url.startsWith('data:')) return url;
+  const match = url.match(/drive\.google\.com\/file\/d\/([^/]+)/);
+  if (match && match[1]) {
+    return `https://drive.google.com/thumbnail?id=${match[1]}&sz=w600`;
+  }
+  return url;
+}
+
+function permintaanStatusColor(st: PermintaanBarangStatus): string {
+  if (st === 'Terpenuhi') return 'var(--status-ok-text)';
+  if (st === 'Terpenuhi Sebagian') return 'var(--status-warn-text)';
+  if (st === 'Disetujui') return 'var(--status-info-text)';
+  return 'var(--text-muted)';
 }
 
 export function TugasSayaSopirPage({
@@ -123,12 +168,14 @@ export function TugasSayaSopirPage({
   p2hList,
   maintenanceList,
   kendalaList,
+  permintaanBarangList,
   onSubmitP2H,
   onStartPerjalanan,
   onMarkSelesaiMuat,
   onMarkSelesaiBongkar,
   onSubmitKendala,
   onSubmitPertanggungjawaban,
+  onSubmitPermintaanBarang,
 }: TugasSayaSopirPageProps) {
   const availableDrivers = useMemo(() => {
     const names = new Set<string>([
@@ -181,6 +228,17 @@ export function TugasSayaSopirPage({
   const [kendalaFotoNama, setKendalaFotoNama] = useState<string | undefined>(undefined);
   const [kendalaError, setKendalaError] = useState('');
 
+  // Ajukan Barang form state
+  const [barangUnitId, setBarangUnitId] = useState('');
+  const [barangRows, setBarangRows] = useState<
+    Array<{ id: string; namaBarang: string; satuan: string; jumlahText: string }>
+  >([{ id: 'BRG-1', namaBarang: '', satuan: 'Pcs', jumlahText: '1' }]);
+  const [barangCatatan, setBarangCatatan] = useState('');
+  const [barangFotoUrl, setBarangFotoUrl] = useState<string | undefined>(undefined);
+  const [barangFotoNama, setBarangFotoNama] = useState<string | undefined>(undefined);
+  const [barangError, setBarangError] = useState('');
+  const [barangSuccess, setBarangSuccess] = useState('');
+
   const unitById = useMemo(() => new Map(units.map((u) => [u.id, u])), [units]);
   const plgById = useMemo(() => new Map(pelangganList.map((p) => [p.id, p])), [pelangganList]);
   const lokById = useMemo(() => new Map(lokasiList.map((l) => [l.id, l])), [lokasiList]);
@@ -216,6 +274,23 @@ export function TugasSayaSopirPage({
         .sort((a, b) => b.waktuLapor.localeCompare(a.waktuLapor)),
     [activeSopir, kendalaList],
   );
+  const myPermintaanBarang = useMemo(
+    () =>
+      permintaanBarangList
+        .filter((req) => req.dimintaOleh.trim().toLowerCase() === activeSopir.trim().toLowerCase())
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
+    [activeSopir, permintaanBarangList],
+  );
+
+  const defaultDriverUnitId = useMemo(() => {
+    if (myActiveTasks[0]?.unitId) return myActiveTasks[0].unitId;
+    if (myTasks[0]?.unitId) return myTasks[0].unitId;
+    const assignedUnit = units.find(
+      (u) => (u.supirUtama || '').trim().toLowerCase() === activeSopir.trim().toLowerCase(),
+    );
+    if (assignedUnit) return assignedUnit.id;
+    return units[0]?.id || '';
+  }, [activeSopir, myActiveTasks, myTasks, units]);
 
   const activeTask = useMemo(
     () => (activeTaskId ? myTasks.find((t) => t.id === activeTaskId) || null : null),
@@ -297,6 +372,52 @@ export function TugasSayaSopirPage({
     setActiveTab('riwayat');
   };
 
+  const handleBarangSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    setBarangError('');
+    setBarangSuccess('');
+
+    const resolvedUnitId = barangUnitId || defaultDriverUnitId;
+    if (units.length > 0 && !resolvedUnitId) {
+      setBarangError('Pilih unit kendaraan terlebih dahulu.');
+      return;
+    }
+
+    const cleanedItems = barangRows
+      .map((row) => ({
+        namaBarang: row.namaBarang.trim(),
+        satuan: row.satuan.trim() || 'Pcs',
+        jumlahDiminta: Math.max(0, Number(row.jumlahText) || 0),
+      }))
+      .filter((row) => row.namaBarang.length > 0 && row.jumlahDiminta > 0);
+
+    if (cleanedItems.length === 0) {
+      setBarangError('Isi minimal 1 nama barang dan jumlah yang diminta (> 0).');
+      return;
+    }
+
+    onSubmitPermintaanBarang({
+      unitId: resolvedUnitId,
+      sopirNama: activeSopir,
+      items: cleanedItems,
+      catatan: barangCatatan.trim() || undefined,
+      fotoDataUrl: barangFotoUrl,
+      fotoNama: barangFotoNama,
+    });
+
+    setBarangRows([
+      { id: `BRG-${Date.now()}`, namaBarang: '', satuan: 'Pcs', jumlahText: '1' },
+    ]);
+    setBarangCatatan('');
+    setBarangFotoUrl(undefined);
+    setBarangFotoNama(undefined);
+    setBarangSuccess(
+      barangFotoUrl
+        ? 'Pengajuan barang & foto terkirim ke menu Permintaan Barang Admin dan folder Drive Pengajuan Barang.'
+        : 'Pengajuan barang terkirim dan otomatis masuk ke menu Permintaan Barang Admin.',
+    );
+  };
+
   return (
     <section className="max-w-2xl mx-auto space-y-4 pb-8">
       {/* Driver Header Bar */}
@@ -329,6 +450,10 @@ export function TugasSayaSopirPage({
                 setSelectedSopir(e.target.value);
                 setActiveTaskId(null);
                 setP2hMode(false);
+                setBarangUnitId('');
+                setBarangFotoUrl(undefined);
+                setBarangFotoNama(undefined);
+                setBarangSuccess('');
               }}
               className="w-full sm:w-48 text-xs px-3 py-2 rounded-xl t-input font-semibold"
             >
@@ -342,21 +467,41 @@ export function TugasSayaSopirPage({
         )}
       </div>
 
-      {/* 3 Mobile Tabs: Tugas Saya | Lapor Kendala | Riwayat */}
-      <div className="grid grid-cols-3 gap-1 sm:gap-1.5 p-1 sm:p-1.5 rounded-2xl t-card">
+      {/* 4 Mobile Tabs: Tugas Saya | Ajukan Barang | Lapor Kendala | Riwayat */}
+      <div className="grid grid-cols-4 gap-1 sm:gap-1.5 p-1 sm:p-1.5 rounded-2xl t-card">
         <button
           type="button"
           onClick={() => {
             setActiveTab('tugas');
             setP2hMode(false);
           }}
-          className={`min-w-0 min-h-[52px] sm:min-h-0 flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-1.5 py-2 sm:py-2.5 px-1.5 sm:px-3 rounded-xl text-[11px] sm:text-xs font-bold leading-tight text-center transition-colors ${
+          className={`min-w-0 min-h-[54px] sm:min-h-0 flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-1.5 py-2 sm:py-2.5 px-1 sm:px-2.5 rounded-xl text-[11px] sm:text-xs font-bold leading-tight text-center transition-colors ${
             activeTab === 'tugas' ? 't-btn-primary' : 't-muted hover:t-text'
           }`}
         >
           <ClipboardCheck className="w-4 h-4 shrink-0" />
           <span className="truncate max-w-full">
-            Tugas Saya <span className="font-mono-num">({myActiveTasks.length})</span>
+            Tugas <span className="font-mono-num">({myActiveTasks.length})</span>
+          </span>
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            setActiveTab('barang');
+            setP2hMode(false);
+            setBarangError('');
+            setBarangSuccess('');
+            if (!barangUnitId && defaultDriverUnitId) {
+              setBarangUnitId(defaultDriverUnitId);
+            }
+          }}
+          className={`min-w-0 min-h-[54px] sm:min-h-0 flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-1.5 py-2 sm:py-2.5 px-1 sm:px-2.5 rounded-xl text-[11px] sm:text-xs font-bold leading-tight text-center transition-colors ${
+            activeTab === 'barang' ? 't-btn-primary' : 't-muted hover:t-text'
+          }`}
+        >
+          <Package className="w-4 h-4 shrink-0" />
+          <span className="truncate max-w-full">
+            Barang <span className="font-mono-num">({myPermintaanBarang.length})</span>
           </span>
         </button>
         <button
@@ -368,12 +513,12 @@ export function TugasSayaSopirPage({
               setKendalaTaskId(myActiveTasks[0].id);
             }
           }}
-          className={`min-w-0 min-h-[52px] sm:min-h-0 flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-1.5 py-2 sm:py-2.5 px-1.5 sm:px-3 rounded-xl text-[11px] sm:text-xs font-bold leading-tight text-center transition-colors ${
+          className={`min-w-0 min-h-[54px] sm:min-h-0 flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-1.5 py-2 sm:py-2.5 px-1 sm:px-2.5 rounded-xl text-[11px] sm:text-xs font-bold leading-tight text-center transition-colors ${
             activeTab === 'kendala' ? 't-btn-primary' : 't-muted hover:t-text'
           }`}
         >
           <AlertTriangle className="w-4 h-4 shrink-0" />
-          <span className="truncate max-w-full">Lapor Kendala</span>
+          <span className="truncate max-w-full">Kendala</span>
         </button>
         <button
           type="button"
@@ -381,7 +526,7 @@ export function TugasSayaSopirPage({
             setActiveTab('riwayat');
             setP2hMode(false);
           }}
-          className={`min-w-0 min-h-[52px] sm:min-h-0 flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-1.5 py-2 sm:py-2.5 px-1.5 sm:px-3 rounded-xl text-[11px] sm:text-xs font-bold leading-tight text-center transition-colors ${
+          className={`min-w-0 min-h-[54px] sm:min-h-0 flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-1.5 py-2 sm:py-2.5 px-1 sm:px-2.5 rounded-xl text-[11px] sm:text-xs font-bold leading-tight text-center transition-colors ${
             activeTab === 'riwayat' ? 't-btn-primary' : 't-muted hover:t-text'
           }`}
         >
@@ -1121,7 +1266,345 @@ export function TugasSayaSopirPage({
         </>
       )}
 
-      {/* TAB 2: LAPOR KENDALA */}
+      {/* TAB 2: AJUKAN BARANG */}
+      {activeTab === 'barang' && (
+        <div className="space-y-4 text-xs">
+          <form onSubmit={handleBarangSubmit} className="t-card rounded-2xl p-4 sm:p-5 space-y-4">
+            <div>
+              <h3 className="text-base font-display t-text">Ajukan Permintaan Barang</h3>
+              <p className="text-[11px] t-muted mt-0.5">
+                Ajukan kebutuhan sparepart, oli, perlengkapan keselamatan, atau barang operasional
+                armada. Pengajuan akan langsung muncul di menu <b>Permintaan Barang</b> Admin.
+              </p>
+            </div>
+
+            {barangError && (
+              <div className="p-3 rounded-xl t-status-bad font-semibold flex items-start gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                <span>{barangError}</span>
+              </div>
+            )}
+
+            {barangSuccess && (
+              <div className="p-3 rounded-xl t-status-ok font-semibold flex items-start gap-2">
+                <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5" />
+                <span>{barangSuccess}</span>
+              </div>
+            )}
+
+            <div>
+              <label htmlFor="brg-unit" className="block t-field-label mb-1">
+                Unit Armada Terkait *
+              </label>
+              <select
+                id="brg-unit"
+                value={barangUnitId || defaultDriverUnitId}
+                onChange={(e) => setBarangUnitId(e.target.value)}
+                className="w-full px-3 py-2.5 rounded-xl t-input font-semibold"
+              >
+                {units.length === 0 ? (
+                  <option value="">Belum ada unit terdaftar</option>
+                ) : (
+                  units.map((u) => (
+                    <option key={u.id} value={u.id}>
+                      {u.kodeUnit} ({u.nomorPolisi}) — {u.jenisKendaraan}
+                    </option>
+                  ))
+                )}
+              </select>
+            </div>
+
+            <div className="space-y-2.5">
+              <div className="flex items-center justify-between gap-2">
+                <span className="t-field-label">Daftar Barang / Sparepart *</span>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setBarangRows((prev) => [
+                      ...prev,
+                      {
+                        id: `BRG-${Date.now()}-${prev.length + 1}`,
+                        namaBarang: '',
+                        satuan: 'Pcs',
+                        jumlahText: '1',
+                      },
+                    ])
+                  }
+                  className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl t-btn-secondary text-[11px] font-bold"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>Tambah Item</span>
+                </button>
+              </div>
+
+              <div className="space-y-2.5">
+                {barangRows.map((row, idx) => (
+                  <div
+                    key={row.id}
+                    className="p-3 rounded-xl t-subtle border t-border space-y-2"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-[11px] font-bold t-muted">Item #{idx + 1}</span>
+                      {barangRows.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setBarangRows((prev) => prev.filter((item) => item.id !== row.id))
+                          }
+                          aria-label={`Hapus item ${idx + 1}`}
+                          className="inline-flex items-center gap-1 text-[11px] font-semibold text-red-600 hover:underline"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          <span>Hapus</span>
+                        </button>
+                      )}
+                    </div>
+
+                    <input
+                      type="text"
+                      value={row.namaBarang}
+                      onChange={(e) =>
+                        setBarangRows((prev) =>
+                          prev.map((item) =>
+                            item.id === row.id ? { ...item, namaBarang: e.target.value } : item,
+                          ),
+                        )
+                      }
+                      placeholder="Contoh: Oli Mesin 15W-40, Lampu Sein, Terpal Penutup, Sarung Tangan..."
+                      className="w-full px-3 py-2 rounded-xl t-input"
+                    />
+
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-[10px] font-semibold t-muted mb-1">
+                          Jumlah Diminta
+                        </label>
+                        <input
+                          type="number"
+                          min={1}
+                          max={999}
+                          value={row.jumlahText}
+                          onChange={(e) =>
+                            setBarangRows((prev) =>
+                              prev.map((item) =>
+                                item.id === row.id ? { ...item, jumlahText: e.target.value } : item,
+                              ),
+                            )
+                          }
+                          className="w-full px-3 py-2 rounded-xl t-input font-mono-num"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-semibold t-muted mb-1">
+                          Satuan
+                        </label>
+                        <select
+                          value={row.satuan}
+                          onChange={(e) =>
+                            setBarangRows((prev) =>
+                              prev.map((item) =>
+                                item.id === row.id ? { ...item, satuan: e.target.value } : item,
+                              ),
+                            )
+                          }
+                          className="w-full px-3 py-2 rounded-xl t-input font-semibold"
+                        >
+                          {SATUAN_BARANG_OPTIONS.map((sat) => (
+                            <option key={sat} value={sat}>
+                              {sat}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <label htmlFor="brg-catatan" className="block t-field-label mb-1">
+                Catatan / Alasan Kebutuhan (Opsional)
+              </label>
+              <textarea
+                id="brg-catatan"
+                rows={2}
+                value={barangCatatan}
+                onChange={(e) => setBarangCatatan(e.target.value)}
+                placeholder="Contoh: Lampu sein belakang kanan mati saat angkut muatan, butuh segera diganti..."
+                className="w-full px-3 py-2 rounded-xl t-input resize-none"
+              />
+            </div>
+
+            <div>
+              <span className="block t-field-label mb-1">
+                Foto Barang / Kondisi Lapangan (Opsional)
+              </span>
+              <p className="text-[11px] t-muted mb-2">
+                Foto otomatis disimpan ke folder Google Drive <b>Pengajuan Barang</b>.
+              </p>
+              <div className="flex flex-wrap items-center gap-2">
+                <label className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl t-btn-secondary font-semibold cursor-pointer">
+                  <Camera className="w-3.5 h-3.5" />
+                  <span>{barangFotoNama || 'Ambil / Unggah Foto Barang'}</span>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    capture="environment"
+                    className="hidden"
+                    onChange={async (e) => {
+                      const f = e.target.files?.[0];
+                      if (!f) return;
+                      try {
+                        const res = await readProofFileAsDataUrl(f);
+                        setBarangFotoUrl(res.dataUrl);
+                        setBarangFotoNama(res.name);
+                      } catch {
+                        setBarangError('Gagal membaca file foto. Silakan coba lagi.');
+                      }
+                    }}
+                  />
+                </label>
+                {barangFotoUrl && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setBarangFotoUrl(undefined);
+                      setBarangFotoNama(undefined);
+                    }}
+                    className="inline-flex items-center gap-1 px-3 py-2 rounded-xl t-btn-secondary text-[11px] font-semibold text-red-600"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Hapus Foto</span>
+                  </button>
+                )}
+              </div>
+              {barangFotoUrl && (
+                <img
+                  src={barangFotoUrl}
+                  alt="Preview foto pengajuan barang"
+                  className="mt-2.5 max-h-44 rounded-xl border t-border object-contain"
+                />
+              )}
+            </div>
+
+            <button
+              type="submit"
+              className="w-full py-3 rounded-xl t-btn-primary text-sm font-bold inline-flex items-center justify-center gap-2"
+            >
+              <Package className="w-4 h-4" />
+              <span>Kirim Pengajuan Barang</span>
+            </button>
+          </form>
+
+          {/* Status Pengajuan Barang Sopir */}
+          <div className="t-card rounded-2xl p-4 space-y-3">
+            <div className="flex items-center justify-between gap-2">
+              <h3 className="t-section-label">
+                Pengajuan Barang Saya ({myPermintaanBarang.length})
+              </h3>
+              <span className="text-[11px] t-muted">Status tersinkron dengan Admin</span>
+            </div>
+
+            {myPermintaanBarang.length === 0 ? (
+              <p className="t-muted">
+                Belum ada pengajuan barang yang Anda kirim. Isi formulir di atas untuk mengajukan.
+              </p>
+            ) : (
+              <div className="space-y-2.5">
+                {myPermintaanBarang.map((req) => {
+                  const computedStatus = computePermintaanBarangStatus(req.items);
+                  const previewSrc = resolvePhotoPreviewSrc(req.fotoDataUrl);
+                  const isExternalDriveLink = Boolean(
+                    req.fotoDataUrl && req.fotoDataUrl.startsWith('http'),
+                  );
+                  return (
+                    <div
+                      key={req.id}
+                      className="p-3.5 rounded-xl t-subtle border t-border space-y-2"
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div>
+                          <span className="font-mono-num font-bold t-link">
+                            {req.nomorPermintaan}
+                          </span>{' '}
+                          <span className="t-muted">&middot;</span>{' '}
+                          <span className="font-mono-num font-semibold t-text">
+                            {req.kodeUnit} ({req.nomorPolisi})
+                          </span>
+                        </div>
+                        <span
+                          className="font-bold text-[11px]"
+                          style={{ color: permintaanStatusColor(computedStatus) }}
+                        >
+                          {computedStatus}
+                        </span>
+                      </div>
+
+                      <div className="text-[11px] t-muted">
+                        Tanggal: {formatDateShortID(req.tanggalPermintaan)}
+                      </div>
+
+                      <div className="space-y-1 pt-1 border-t t-border">
+                        {req.items.map((item) => (
+                          <div
+                            key={item.id}
+                            className="flex flex-wrap items-center justify-between gap-2 text-[11px]"
+                          >
+                            <span className="font-semibold t-text">
+                              {item.namaBarang}{' '}
+                              <span className="font-normal t-muted">({item.satuan})</span>
+                            </span>
+                            <span className="font-mono-num t-muted">
+                              Diminta {item.jumlahDiminta} · Disetujui {item.jumlahDisetujui} ·
+                              Diterima {item.jumlahDiterima}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+
+                      {req.catatan && (
+                        <div className="text-[11px] t-muted pt-1 border-t t-border">
+                          <span className="font-semibold t-text">Catatan:</span> {req.catatan}
+                        </div>
+                      )}
+
+                      {req.fotoDataUrl && (
+                        <div className="pt-2 border-t t-border space-y-1.5">
+                          <div className="flex items-center justify-between gap-2 text-[11px]">
+                            <span className="font-semibold t-text">
+                              Lampiran Foto{req.fotoNama ? `: ${req.fotoNama}` : ''}
+                            </span>
+                            {isExternalDriveLink && (
+                              <a
+                                href={req.fotoDataUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="font-semibold t-link hover:underline"
+                              >
+                                Buka di Drive
+                              </a>
+                            )}
+                          </div>
+                          {previewSrc && (
+                            <img
+                              src={previewSrc}
+                              alt={req.fotoNama || 'Foto pengajuan barang'}
+                              className="max-h-40 rounded-xl border t-border object-contain"
+                            />
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* TAB 3: LAPOR KENDALA */}
       {activeTab === 'kendala' && (
         <form onSubmit={handleKendalaSubmit} className="t-card rounded-2xl p-5 space-y-4 text-xs">
           <div>
@@ -1330,6 +1813,41 @@ export function TugasSayaSopirPage({
                   )}
                 </div>
               ))
+            )}
+          </div>
+
+          {/* Permintaan Barang History */}
+          <div className="t-card rounded-2xl p-4 space-y-3">
+            <h3 className="t-section-label">
+              Pengajuan Barang ({myPermintaanBarang.length})
+            </h3>
+            {myPermintaanBarang.length === 0 ? (
+              <p className="t-muted">Belum ada pengajuan barang yang dikirim.</p>
+            ) : (
+              myPermintaanBarang.map((req) => {
+                const computedStatus = computePermintaanBarangStatus(req.items);
+                return (
+                  <div key={req.id} className="p-3 rounded-xl t-subtle border t-border space-y-1">
+                    <div className="flex justify-between font-bold">
+                      <span className="font-mono-num t-link">
+                        {req.nomorPermintaan} &middot; {req.kodeUnit}
+                      </span>
+                      <span style={{ color: permintaanStatusColor(computedStatus) }}>
+                        {computedStatus}
+                      </span>
+                    </div>
+                    <div className="t-text">
+                      {req.items
+                        .map((it) => `${it.namaBarang} (${it.jumlahDiminta} ${it.satuan})`)
+                        .join(', ')}
+                    </div>
+                    <div className="text-[11px] t-muted">
+                      {formatDateShortID(req.tanggalPermintaan)}
+                      {req.catatan ? ` · ${req.catatan}` : ''}
+                    </div>
+                  </div>
+                );
+              })
             )}
           </div>
         </div>

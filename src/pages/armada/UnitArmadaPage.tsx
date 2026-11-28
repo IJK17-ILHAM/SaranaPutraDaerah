@@ -2,8 +2,10 @@ import {
   ArrowLeft,
   CheckCircle2,
   ClipboardCheck,
+  Download,
   ExternalLink,
   Eye,
+  FileSpreadsheet,
   FileText,
   FolderOpen,
   Pencil,
@@ -18,6 +20,7 @@ import {
 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { ArmadaMenuIcon } from '../../components/armada/ArmadaMenuIcons';
+import { MasterDataImportModal } from '../../components/armada/MasterDataImportModal';
 import { UnitArmadaFormModal } from '../../components/armada/UnitArmadaFormModal';
 import { GOOGLE_ARMADA_DRIVE_FOLDER_URL } from '../../config/constants';
 import type {
@@ -33,6 +36,11 @@ import type {
   ArmadaUnitStatus,
 } from '../../types/armada';
 import { readProofFileAsDataUrl } from '../../utils/armadaSchedule';
+import {
+  downloadMasterDataTemplate,
+  type MasterDataTabKey,
+  type SpsArmadaImportResult,
+} from '../../utils/armadaSpreadsheet';
 import { formatDateShortID } from '../../utils/format';
 
 type DetailTabId = 'berkas' | 'perjalanan' | 'p2h' | 'perbaikan';
@@ -62,6 +70,11 @@ interface UnitArmadaPageProps {
       dataUrl: string;
     },
   ) => Promise<void> | void;
+  onExportWorkbook?: () => void;
+  onImportMasterData?: (
+    file: File,
+    preferredTab: MasterDataTabKey | 'all',
+  ) => Promise<SpsArmadaImportResult | null>;
 }
 
 export function UnitArmadaPage({
@@ -80,9 +93,12 @@ export function UnitArmadaPage({
   onOpenP2H,
   onOpenMaintenance,
   onUploadUnitBerkas,
+  onExportWorkbook,
+  onImportMasterData,
 }: UnitArmadaPageProps) {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<'ALL' | ArmadaUnitStatus>('ALL');
+  const [importModalOpen, setImportModalOpen] = useState(false);
   const [jenisFilter, setJenisFilter] = useState('ALL');
   const [modalOpen, setModalOpen] = useState(false);
   const [editingUnit, setEditingUnit] = useState<ArmadaUnit | null>(null);
@@ -699,23 +715,36 @@ export function UnitArmadaPage({
   // DAFTAR UNIT VIEW
   return (
     <section className="space-y-5">
-      {/* Page Header */}
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div className="flex items-start gap-3">
-          <div className="w-11 h-11 rounded-xl t-subtle border t-border flex items-center justify-center shrink-0">
-            <ArmadaMenuIcon id="armada-master-unit" size={30} />
-          </div>
-          <div>
-            <h2 className="text-base sm:text-lg font-display font-bold t-text leading-snug">
-              Daftar Master Unit Armada
-            </h2>
-            <p className="text-xs t-muted mt-0.5 max-w-2xl">
-              Daftar master kendaraan yang digunakan untuk pencatatan STNK/KIR, pembuatan perjalanan,
-              pengisian P2H, dan pengajuan perbaikan.
-            </p>
-          </div>
-        </div>
-
+      {/* Action Toolbar */}
+      <div className="flex flex-wrap items-center justify-end gap-2">
+          <button
+            type="button"
+            onClick={() => downloadMasterDataTemplate('units')}
+            className="inline-flex items-center gap-1.5 px-3 py-2.5 rounded-xl t-btn-secondary text-xs font-semibold whitespace-nowrap"
+          >
+            <Download className="w-4 h-4" />
+            <span>Template</span>
+          </button>
+          {onImportMasterData && (
+            <button
+              type="button"
+              onClick={() => setImportModalOpen(true)}
+              className="inline-flex items-center gap-1.5 px-3 py-2.5 rounded-xl t-btn-secondary text-xs font-semibold whitespace-nowrap"
+            >
+              <Upload className="w-4 h-4" />
+              <span>Impor Excel</span>
+            </button>
+          )}
+          {onExportWorkbook && (
+            <button
+              type="button"
+              onClick={onExportWorkbook}
+              className="inline-flex items-center gap-1.5 px-3 py-2.5 rounded-xl t-btn-secondary text-xs font-semibold whitespace-nowrap"
+            >
+              <FileSpreadsheet className="w-4 h-4" />
+              <span>Ekspor SPS</span>
+            </button>
+          )}
         <button
           type="button"
           onClick={openCreateModal}
@@ -931,6 +960,15 @@ export function UnitArmadaPage({
         }}
         onSave={handleSave}
       />
+
+      {onImportMasterData && (
+        <MasterDataImportModal
+          open={importModalOpen}
+          tabKey="units"
+          onClose={() => setImportModalOpen(false)}
+          onImportFile={onImportMasterData}
+        />
+      )}
     </section>
   );
 }

@@ -67,6 +67,7 @@ import {
 } from '../../data/armadaSeed';
 import {
   deleteArmadaRecordFromSPS,
+  ensurePengajuanBarangDriveFolderFromSPS,
   fetchArmadaAllFromSPS,
   pushAllArmadaToSPS,
   syncArmadaCollectionToSPS,
@@ -111,6 +112,8 @@ import {
 import {
   exportSpsArmadaWorkbook,
   importSpsArmadaWorkbook,
+  type MasterDataTabKey,
+  type SpsArmadaImportResult,
 } from '../../utils/armadaSpreadsheet';
 import { getTodayISO } from '../../utils/format';
 import {
@@ -207,6 +210,13 @@ export function ArmadaDashboardPage() {
   );
   const [accounts, setAccounts] = useState<ArmadaAccount[]>(() => loadStoredArmadaAccounts());
   const [isSyncingSps, setIsSyncingSps] = useState(false);
+  const [pengajuanBarangDriveUrl, setPengajuanBarangDriveUrl] = useState<string>(() => {
+    const saved = localStorage.getItem('spd_armada_pb_drive_url');
+    if (saved) return saved;
+    const existing = loadStoredArmadaPermintaanBarang().find((r) => r.driveFolderUrl);
+    return existing?.driveFolderUrl || '';
+  });
+  const [isEnsuringPbDrive, setIsEnsuringPbDrive] = useState(false);
 
   // Cross-navigation selection states
   const [selectedUnitId, setSelectedUnitId] = useState<string | null>(null);
@@ -296,6 +306,15 @@ export function ArmadaDashboardPage() {
           if (parsed.permintaanBarang) {
             setPermintaanBarang(parsed.permintaanBarang);
             saveStoredArmadaPermintaanBarang(parsed.permintaanBarang);
+            const folderFromRow = parsed.permintaanBarang.find((r) => r.driveFolderUrl)?.driveFolderUrl;
+            if (folderFromRow) {
+              setPengajuanBarangDriveUrl(folderFromRow);
+              localStorage.setItem('spd_armada_pb_drive_url', folderFromRow);
+            }
+          }
+          if (parsed.pengajuanBarangDriveUrl) {
+            setPengajuanBarangDriveUrl(parsed.pengajuanBarangDriveUrl);
+            localStorage.setItem('spd_armada_pb_drive_url', parsed.pengajuanBarangDriveUrl);
           }
           if (parsed.kendala) {
             setKendalaList(parsed.kendala);
@@ -403,7 +422,8 @@ export function ArmadaDashboardPage() {
             }
           }
           const refNumber = String(
-            record.nomorP2H ||
+            record.nomorPermintaan ||
+              record.nomorP2H ||
               record.nomorPengajuan ||
               record.nomorSewa ||
               record.nomorUangJalan ||
@@ -847,7 +867,12 @@ export function ArmadaDashboardPage() {
     const created: ArmadaPerjalanan = {
       id: `PRJ-${Date.now()}-${Math.random().toString(36).slice(2, 5).toUpperCase()}`,
       nomorPenugasan: num,
-      nomorSuratJalan: `SJ/SPD/${new Date().getFullYear()}/${seqNum}`,
+      nomorSuratJalan: input.nomorSuratJalan?.trim() || `SJ/SPD/${new Date().getFullYear()}/${seqNum}`,
+      nomorManifest: input.nomorManifest?.trim() || undefined,
+      jenisLimbah: input.jenisLimbah?.trim() || undefined,
+      kodeLimbah: input.kodeLimbah?.trim() || undefined,
+      kemasanLimbah: input.kemasanLimbah?.trim() || undefined,
+      estimasiMuatan: input.estimasiMuatan?.trim() || undefined,
       unitId: input.unitId,
       sopirNama: input.sopirNama,
       pelangganId: input.pelangganId,
@@ -860,6 +885,12 @@ export function ArmadaDashboardPage() {
       jamMulai: input.jamMulai,
       tanggalSelesai: input.tanggalSelesai,
       jamSelesai: input.jamSelesai,
+      waktuTibaMuat: input.waktuTibaMuat?.trim() || undefined,
+      waktuMuatMulai: input.waktuMuatMulai?.trim() || undefined,
+      waktuMuatSelesai: input.waktuMuatSelesai?.trim() || undefined,
+      waktuTibaBongkar: input.waktuTibaBongkar?.trim() || undefined,
+      waktuBongkarMulai: input.waktuBongkarMulai?.trim() || undefined,
+      waktuBongkarSelesai: input.waktuBongkarSelesai?.trim() || undefined,
       status: 'Dijadwalkan',
       tahapPerjalanan: 'Belum Mulai',
       catatan: input.catatan || '',
@@ -1190,6 +1221,12 @@ export function ArmadaDashboardPage() {
     catatanKerusakan?: string;
     buktiKembaliDataUrl?: string;
     buktiKembaliNama?: string;
+    waktuTibaMuat?: string;
+    waktuMuatMulai?: string;
+    waktuMuatSelesai?: string;
+    waktuTibaBongkar?: string;
+    waktuBongkarMulai?: string;
+    waktuBongkarSelesai?: string;
   }) => {
     const now = new Date().toISOString();
     setSewaList((prev) => {
@@ -1205,6 +1242,12 @@ export function ArmadaDashboardPage() {
               catatanKerusakan: params.catatanKerusakan,
               buktiKembaliDataUrl: params.buktiKembaliDataUrl,
               buktiKembaliNama: params.buktiKembaliNama,
+              waktuTibaMuat: params.waktuTibaMuat || s.waktuTibaMuat,
+              waktuMuatMulai: params.waktuMuatMulai || s.waktuMuatMulai,
+              waktuMuatSelesai: params.waktuMuatSelesai || s.waktuMuatSelesai,
+              waktuTibaBongkar: params.waktuTibaBongkar || s.waktuTibaBongkar,
+              waktuBongkarMulai: params.waktuBongkarMulai || s.waktuBongkarMulai,
+              waktuBongkarSelesai: params.waktuBongkarSelesai || s.waktuBongkarSelesai,
               updatedAt: now,
             }
           : s,
@@ -1491,11 +1534,31 @@ export function ArmadaDashboardPage() {
     notify(`Pemeriksaan ulang dicatat & penahanan unit ${target?.kodeUnit || ''} dilepas.`);
   };
 
+  const handleEnsurePengajuanBarangDriveFolder = async () => {
+    setIsEnsuringPbDrive(true);
+    try {
+      const folderUrl = await ensurePengajuanBarangDriveFolderFromSPS();
+      if (folderUrl) {
+        setPengajuanBarangDriveUrl(folderUrl);
+        localStorage.setItem('spd_armada_pb_drive_url', folderUrl);
+        notify('Folder Google Drive khusus "Pengajuan Barang" siap & tersambung.');
+      } else {
+        notify(
+          'Permintaan pembuatan folder "Pengajuan Barang" dikirim ke Drive Armada. Pastikan Apps Script terbaru sudah diterapkan.',
+        );
+      }
+    } finally {
+      setIsEnsuringPbDrive(false);
+    }
+  };
+
   const handleCreatePermintaanBarang = (params: {
     maintenanceId: string;
     dimintaOleh: string;
     items: Array<{ namaBarang: string; satuan: string; jumlahDiminta: number }>;
     catatan?: string;
+    fotoDataUrl?: string;
+    fotoNama?: string;
   }) => {
     const maint = maintenanceList.find((m) => m.id === params.maintenanceId);
     if (!maint) return;
@@ -1525,6 +1588,9 @@ export function ArmadaDashboardPage() {
       items: createdItems,
       status: computePermintaanBarangStatus(createdItems),
       catatan: params.catatan,
+      fotoDataUrl: params.fotoDataUrl,
+      fotoNama: params.fotoNama,
+      driveFolderUrl: pengajuanBarangDriveUrl || GOOGLE_ARMADA_DRIVE_FOLDER_URL,
       createdAt: now,
       updatedAt: now,
     };
@@ -1543,7 +1609,64 @@ export function ArmadaDashboardPage() {
         return next;
       });
     }
-    notify(`Permintaan Barang ${nomor} dibuat untuk ${maint.nomorPengajuan}.`);
+    notify(
+      params.fotoDataUrl
+        ? `Permintaan Barang ${nomor} dibuat & foto dikirim ke folder Drive Pengajuan Barang.`
+        : `Permintaan Barang ${nomor} dibuat untuk ${maint.nomorPengajuan}.`,
+    );
+  };
+
+  const handleCreatePermintaanBarangFromSopir = (params: {
+    unitId: string;
+    sopirNama: string;
+    items: Array<{ namaBarang: string; satuan: string; jumlahDiminta: number }>;
+    catatan?: string;
+    fotoDataUrl?: string;
+    fotoNama?: string;
+  }) => {
+    const unit = units.find((u) => u.id === params.unitId);
+    const now = new Date().toISOString();
+    const nomor = generateNextArmadaCode(
+      'PB',
+      permintaanBarang.map((b) => b.nomorPermintaan),
+    );
+    const createdItems: PermintaanBarangItem[] = params.items.map((it, idx) => ({
+      id: `PBI-${Date.now()}-${idx + 1}`,
+      namaBarang: it.namaBarang,
+      satuan: it.satuan,
+      jumlahDiminta: it.jumlahDiminta,
+      jumlahDisetujui: 0,
+      jumlahDiterima: 0,
+    }));
+    const created: ArmadaPermintaanBarang = {
+      id: `PB-${Date.now()}-${Math.random().toString(36).slice(2, 5).toUpperCase()}`,
+      nomorPermintaan: nomor,
+      maintenanceId: '',
+      nomorPengajuanPerbaikan: 'Pengajuan Sopir',
+      unitId: unit?.id || '',
+      kodeUnit: unit?.kodeUnit || '-',
+      nomorPolisi: unit?.nomorPolisi || '-',
+      tanggalPermintaan: getTodayISO(),
+      dimintaOleh: params.sopirNama,
+      items: createdItems,
+      status: computePermintaanBarangStatus(createdItems),
+      catatan: params.catatan,
+      fotoDataUrl: params.fotoDataUrl,
+      fotoNama: params.fotoNama,
+      driveFolderUrl: pengajuanBarangDriveUrl || GOOGLE_ARMADA_DRIVE_FOLDER_URL,
+      createdAt: now,
+      updatedAt: now,
+    };
+    setPermintaanBarang((prev) => {
+      const next = [created, ...prev];
+      saveStoredArmadaPermintaanBarang(next);
+      return next;
+    });
+    notify(
+      params.fotoDataUrl
+        ? `Pengajuan Barang ${nomor} dari ${params.sopirNama} tercatat & foto disimpan ke folder Drive Pengajuan Barang.`
+        : `Pengajuan Barang ${nomor} dari ${params.sopirNama} tercatat di menu Permintaan Barang.`,
+    );
   };
 
   const handleUpdatePermintaanBarangItems = (params: {
@@ -1611,15 +1734,19 @@ export function ArmadaDashboardPage() {
     notify('File SPS Armada (.xlsx) dengan tab Unit Armada, Pelanggan, Lokasi & Tarif diunduh.');
   };
 
-  const handleImportSpsWorkbook = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    e.target.value = '';
-    if (!file) return;
+  const handleImportMasterDataFile = async (
+    file: File,
+    preferredTab: MasterDataTabKey | 'all' = 'all',
+  ): Promise<SpsArmadaImportResult | null> => {
     try {
-      const result = await importSpsArmadaWorkbook(file, { units, pelanggan, lokasi, tarif });
+      const result = await importSpsArmadaWorkbook(
+        file,
+        { units, pelanggan, lokasi, tarif },
+        preferredTab,
+      );
       if (result.tabsFound.length === 0) {
         notify('Tidak ditemukan tab Unit Armada / Pelanggan / Lokasi / Tarif pada file tersebut.');
-        return;
+        return result;
       }
       setUnits(result.dataset.units);
       setPelanggan(result.dataset.pelanggan);
@@ -1630,11 +1757,20 @@ export function ArmadaDashboardPage() {
       saveStoredArmadaLokasi(result.dataset.lokasi);
       saveStoredArmadaTarif(result.dataset.tarif);
       notify(
-        `Impor SPS Armada selesai (${result.counts.pelanggan} pelanggan, ${result.counts.lokasi} lokasi, ${result.counts.tarif} tarif).`,
+        `Impor Master Data selesai (${result.counts.units} unit, ${result.counts.pelanggan} pelanggan, ${result.counts.lokasi} lokasi, ${result.counts.tarif} tarif).`,
       );
+      return result;
     } catch {
-      notify('Gagal membaca file Excel SPS Armada. Pastikan format .xlsx valid.');
+      notify('Gagal membaca file impor. Pastikan format .xlsx, .xls, atau .csv valid.');
+      return null;
     }
+  };
+
+  const handleImportSpsWorkbook = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    await handleImportMasterDataFile(file, 'all');
   };
 
   // ==========================================
@@ -1986,12 +2122,14 @@ export function ArmadaDashboardPage() {
             p2hList={p2hList}
             maintenanceList={maintenanceList}
             kendalaList={kendalaList}
+            permintaanBarangList={permintaanBarang}
             onSubmitP2H={handleSubmitP2H}
             onStartPerjalanan={handleStartPerjalanan}
             onMarkSelesaiMuat={handleMarkSelesaiMuat}
             onMarkSelesaiBongkar={handleMarkSelesaiBongkar}
             onSubmitKendala={handleSubmitKendala}
             onSubmitPertanggungjawaban={handleSubmitPertanggungjawaban}
+            onSubmitPermintaanBarang={handleCreatePermintaanBarangFromSopir}
           />
         </main>
 
@@ -2187,7 +2325,7 @@ export function ArmadaDashboardPage() {
       <input
         ref={spsInputRef}
         type="file"
-        accept=".xlsx,.xls"
+        accept=".xlsx,.xls,.csv"
         className="hidden"
         onChange={handleImportSpsWorkbook}
       />
@@ -2443,6 +2581,8 @@ export function ArmadaDashboardPage() {
                 openMenu('armada-maintenance');
               }}
               onUploadUnitBerkas={handleUploadUnitBerkas}
+              onExportWorkbook={handleExportSpsWorkbook}
+              onImportMasterData={handleImportMasterDataFile}
             />
           )}
 
@@ -2464,6 +2604,7 @@ export function ArmadaDashboardPage() {
                 openMenu('armada-master-tarif');
               }}
               onExportWorkbook={handleExportSpsWorkbook}
+              onImportMasterData={handleImportMasterDataFile}
             />
           )}
 
@@ -2477,6 +2618,7 @@ export function ArmadaDashboardPage() {
               onSaveLokasi={handleSaveLokasi}
               onToggleStatus={handleToggleLokasiStatus}
               onExportWorkbook={handleExportSpsWorkbook}
+              onImportMasterData={handleImportMasterDataFile}
             />
           )}
 
@@ -2492,6 +2634,7 @@ export function ArmadaDashboardPage() {
               onSaveTarif={handleSaveTarif}
               onToggleStatus={handleToggleTarifStatus}
               onExportWorkbook={handleExportSpsWorkbook}
+              onImportMasterData={handleImportMasterDataFile}
             />
           )}
 
@@ -2576,12 +2719,14 @@ export function ArmadaDashboardPage() {
               p2hList={p2hList}
               maintenanceList={maintenanceList}
               kendalaList={kendalaList}
+              permintaanBarangList={permintaanBarang}
               onSubmitP2H={handleSubmitP2H}
               onStartPerjalanan={handleStartPerjalanan}
               onMarkSelesaiMuat={handleMarkSelesaiMuat}
               onMarkSelesaiBongkar={handleMarkSelesaiBongkar}
               onSubmitKendala={handleSubmitKendala}
               onSubmitPertanggungjawaban={handleSubmitPertanggungjawaban}
+              onSubmitPermintaanBarang={handleCreatePermintaanBarangFromSopir}
             />
           )}
 
@@ -2627,6 +2772,10 @@ export function ArmadaDashboardPage() {
           {activeMenu === 'armada-permintaan-barang' && (
             <PermintaanBarangPage
               permintaanBarangList={permintaanBarang}
+              driveFolderUrl={pengajuanBarangDriveUrl || GOOGLE_ARMADA_DRIVE_FOLDER_URL}
+              hasDirectDriveFolder={Boolean(pengajuanBarangDriveUrl)}
+              isEnsuringDriveFolder={isEnsuringPbDrive}
+              onEnsureDriveFolder={handleEnsurePengajuanBarangDriveFolder}
               onUpdateItems={handleUpdatePermintaanBarangItems}
               onOpenMaintenance={(maintId) => {
                 setSelectedMaintenanceId(maintId);

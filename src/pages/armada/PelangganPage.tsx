@@ -3,6 +3,7 @@ import {
   ArrowRight,
   Banknote,
   Building2,
+  Download,
   Eye,
   FileSpreadsheet,
   MapPin,
@@ -11,10 +12,12 @@ import {
   Plus,
   Power,
   Search,
+  Upload,
   User,
 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { ArmadaMenuIcon } from '../../components/armada/ArmadaMenuIcons';
+import { MasterDataImportModal } from '../../components/armada/MasterDataImportModal';
 import { PelangganFormModal } from '../../components/armada/PelangganFormModal';
 import type {
   ArmadaLokasi,
@@ -23,6 +26,11 @@ import type {
   ArmadaTarif,
   ArmadaUnitStatus,
 } from '../../types/armada';
+import {
+  downloadMasterDataTemplate,
+  type MasterDataTabKey,
+  type SpsArmadaImportResult,
+} from '../../utils/armadaSpreadsheet';
 import { formatDateShortID, formatRupiah } from '../../utils/format';
 
 interface PelangganPageProps {
@@ -34,6 +42,10 @@ interface PelangganPageProps {
   onOpenLokasiForPelanggan: (pelangganId: string, openCreate?: boolean) => void;
   onOpenTarifForPelanggan: (pelangganId: string, openCreate?: boolean) => void;
   onExportWorkbook: () => void;
+  onImportMasterData: (
+    file: File,
+    preferredTab: MasterDataTabKey | 'all',
+  ) => Promise<SpsArmadaImportResult | null>;
 }
 
 export function PelangganPage({
@@ -45,11 +57,13 @@ export function PelangganPage({
   onOpenLokasiForPelanggan,
   onOpenTarifForPelanggan,
   onExportWorkbook,
+  onImportMasterData,
 }: PelangganPageProps) {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<'ALL' | ArmadaUnitStatus>('ALL');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
+  const [importModalOpen, setImportModalOpen] = useState(false);
   const [editingPelanggan, setEditingPelanggan] = useState<ArmadaPelanggan | null>(null);
 
   const selectedPelanggan = useMemo(
@@ -416,41 +430,39 @@ export function PelangganPage({
   // DAFTAR PELANGGAN VIEW
   return (
     <section className="space-y-5">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div className="flex items-start gap-3">
-          <div className="w-11 h-11 rounded-xl t-subtle border t-border flex items-center justify-center shrink-0">
-            <ArmadaMenuIcon id="armada-master-pelanggan" size={30} />
-          </div>
-          <div>
-            <div className="text-[11px] font-semibold t-link">Tab SPS: Pelanggan</div>
-            <h2 className="text-base sm:text-lg font-display font-bold t-text leading-snug">
-              Daftar Master Pelanggan
-            </h2>
-            <p className="text-xs t-muted mt-0.5 max-w-2xl">
-              Catat identitas perusahaan, PIC, dan kontak sekali saja agar langsung tersedia saat
-              memetakan lokasi muat–bongkar, tarif, dan surat jalan perjalanan.
-            </p>
-          </div>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            onClick={onExportWorkbook}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl t-btn-secondary text-xs font-semibold whitespace-nowrap"
-          >
-            <FileSpreadsheet className="w-4 h-4" />
-            <span>Unduh SPS Armada</span>
-          </button>
-          <button
-            type="button"
-            onClick={openCreateModal}
-            className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl t-btn-primary text-xs whitespace-nowrap"
-          >
-            <Plus className="w-4 h-4" />
-            <span>Tambah Pelanggan</span>
-          </button>
-        </div>
+      <div className="flex flex-wrap items-center justify-end gap-2">
+        <button
+          type="button"
+          onClick={() => downloadMasterDataTemplate('pelanggan')}
+          className="inline-flex items-center gap-1.5 px-3 py-2.5 rounded-xl t-btn-secondary text-xs font-semibold whitespace-nowrap"
+        >
+          <Download className="w-4 h-4" />
+          <span>Template</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => setImportModalOpen(true)}
+          className="inline-flex items-center gap-1.5 px-3 py-2.5 rounded-xl t-btn-secondary text-xs font-semibold whitespace-nowrap"
+        >
+          <Upload className="w-4 h-4" />
+          <span>Impor Excel</span>
+        </button>
+        <button
+          type="button"
+          onClick={onExportWorkbook}
+          className="inline-flex items-center gap-1.5 px-3 py-2.5 rounded-xl t-btn-secondary text-xs font-semibold whitespace-nowrap"
+        >
+          <FileSpreadsheet className="w-4 h-4" />
+          <span>Ekspor SPS</span>
+        </button>
+        <button
+          type="button"
+          onClick={openCreateModal}
+          className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl t-btn-primary text-xs whitespace-nowrap"
+        >
+          <Plus className="w-4 h-4" />
+          <span>Tambah Pelanggan</span>
+        </button>
       </div>
 
       {/* 3 Compact Summary Metrics */}
@@ -656,6 +668,13 @@ export function PelangganPage({
           setEditingPelanggan(null);
         }}
         onSave={handleSave}
+      />
+
+      <MasterDataImportModal
+        open={importModalOpen}
+        tabKey="pelanggan"
+        onClose={() => setImportModalOpen(false)}
+        onImportFile={onImportMasterData}
       />
     </section>
   );
